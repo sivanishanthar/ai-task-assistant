@@ -1,36 +1,34 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 
 import { listFiles } from "../src/tools/listFilesTool.js";
 
-const workspace = path.resolve("workspace");
-
-// Create unique names to avoid conflicts with existing files.
-const testId = randomUUID();
-
+// TC008 - Verify files and folders are listed correctly
 test("TC008 - List files and folders in workspace", async () => {
 
-    const folderName = `TestFolder_${testId}`;
-    const fileName = `TestFile_${testId}.txt`;
-
-    const folderPath = path.join(workspace, folderName);
-    const filePath = path.join(workspace, fileName);
+    const testWorkspace = await fs.mkdtemp(
+        path.join(os.tmpdir(), "ai-agent-test-")
+    );
 
     try {
-        await fs.mkdir(workspace, { recursive: true });
+        await fs.mkdir(
+            path.join(testWorkspace, "TestFolder")
+        );
 
-        await fs.mkdir(folderPath);
-        await fs.writeFile(filePath, "Test content");
+        await fs.writeFile(
+            path.join(testWorkspace, "TestFile.txt"),
+            "Test content"
+        );
 
-        const result = await listFiles();
+        const result = await listFiles(testWorkspace);
 
         assert.ok(
             result.some(
                 item =>
-                    item.name === folderName &&
+                    item.name === "TestFolder" &&
                     item.type === "folder"
             )
         );
@@ -38,51 +36,94 @@ test("TC008 - List files and folders in workspace", async () => {
         assert.ok(
             result.some(
                 item =>
-                    item.name === fileName &&
+                    item.name === "TestFile.txt" &&
                     item.type === "file"
             )
         );
 
     } finally {
-
-        await fs.rm(folderPath, {
+        await fs.rm(testWorkspace, {
             recursive: true,
             force: true
         });
+    }
+});
 
-        await fs.rm(filePath, {
+// TC009 - Verify the return type is an array
+test("TC009 - Verify listFiles returns an array", async () => {
+
+    const testWorkspace = await fs.mkdtemp(
+        path.join(os.tmpdir(), "ai-agent-test-")
+    );
+
+    try {
+        const result = await listFiles(testWorkspace);
+
+        assert.ok(Array.isArray(result));
+
+    } finally {
+        await fs.rm(testWorkspace, {
+            recursive: true,
             force: true
         });
     }
 });
 
-test("TC009 - Verify listFiles returns an array", async () => {
-
-    const result = await listFiles();
-
-    assert.ok(Array.isArray(result));
-});
-
+// TC010 - Verify file and folder metadata
 test("TC010 - Verify file and folder information", async () => {
 
-    const result = await listFiles();
+    const testWorkspace = await fs.mkdtemp(
+        path.join(os.tmpdir(), "ai-agent-test-")
+    );
 
-    for (const item of result) {
-
-        assert.equal(typeof item.name, "string");
-
-        assert.ok(
-            item.type === "file" ||
-            item.type === "folder"
+    try {
+        await fs.mkdir(
+            path.join(testWorkspace, "TestFolder")
         );
+
+        await fs.writeFile(
+            path.join(testWorkspace, "TestFile.txt"),
+            "Test content"
+        );
+
+        const result = await listFiles(testWorkspace);
+
+        assert.equal(result.length, 2);
+
+        for (const item of result) {
+
+            assert.equal(typeof item.name, "string");
+
+            assert.ok(
+                item.type === "file" ||
+                item.type === "folder"
+            );
+        }
+
+    } finally {
+        await fs.rm(testWorkspace, {
+            recursive: true,
+            force: true
+        });
     }
 });
 
+// TC022 - Verify empty workspace behavior
 test("TC022 - List files returns an array for an empty workspace", async () => {
-    // The function should always return an array,
-    // even when no files are present.
 
-    const result = await listFiles();
+    const testWorkspace = await fs.mkdtemp(
+        path.join(os.tmpdir(), "ai-agent-test-")
+    );
 
-    assert.ok(Array.isArray(result));
+    try {
+        const result = await listFiles(testWorkspace);
+
+        assert.deepEqual(result, []);
+
+    } finally {
+        await fs.rm(testWorkspace, {
+            recursive: true,
+            force: true
+        });
+    }
 });

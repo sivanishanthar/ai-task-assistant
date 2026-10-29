@@ -1,9 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const workspace = path.resolve("workspace");
-
-export async function listFiles() {
+export async function listFiles(
+    workspace = path.resolve("workspace")
+) {
     await fs.mkdir(workspace, { recursive: true });
 
     const items = await fs.readdir(workspace, {
