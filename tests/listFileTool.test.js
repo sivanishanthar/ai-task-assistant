@@ -77,3 +77,12 @@ test("TC010 - Verify file and folder information", async () => {
         );
     }
 });
+
+test("TC022 - List files returns an array for an empty workspace", async () => {
+    // The function should always return an array,
+    // even when no files are present.
+
+    const result = await listFiles();
+
+    assert.ok(Array.isArray(result));
+});

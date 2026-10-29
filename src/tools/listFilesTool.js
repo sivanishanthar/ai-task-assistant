@@ -10,10 +10,6 @@ export async function listFiles() {
         withFileTypes: true
     });
 
-    if (items.length === 0) {
-        return "The workspace is empty.";
-    }
-
     return items.map(item => ({
         name: item.name,
         type: item.isDirectory() ? "folder" : "file"
