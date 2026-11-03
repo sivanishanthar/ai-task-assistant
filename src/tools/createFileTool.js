@@ -1,11 +1,12 @@
+
 import fs from "node:fs/promises";
 import path from "node:path";
 
-// Define workspace directory
-const workspace = path.resolve("workspace");
-
 // Function to create a file
-export async function createFile(fileName) {
+export async function createFile(
+    fileName,
+    workspace = path.resolve("workspace")
+) {
 
     // Validate filename
     if (
