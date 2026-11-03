@@ -1,11 +1,12 @@
+
 import fs from "node:fs/promises";
 import path from "node:path";
 
-// Define workspace directory
-const workspace = path.resolve("workspace");
-
 // Read a text file from the workspace
-export async function readFile(fileName) {
+export async function readFile(
+    fileName,
+    workspace = path.resolve("workspace")
+) {
 
     // Validate filename
     if (
@@ -23,14 +24,18 @@ export async function readFile(fileName) {
 
     // Only allow regular files
     if (!stats.isFile()) {
-        throw new Error("The requested path is not a regular file.");
+        throw new Error(
+            "The requested path is not a regular file."
+        );
     }
 
     // Prevent reading excessively large files
     const maxSize = 100 * 1024; // 100 KB
 
     if (stats.size > maxSize) {
-        throw new Error("File exceeds the 100 KB reading limit.");
+        throw new Error(
+            "File exceeds the 100 KB reading limit."
+        );
     }
 
     // Read the file
