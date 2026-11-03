@@ -266,4 +266,4 @@ The source code is available here:
 
 [GitHub — AI Task Assistant](https://github.com/sivanishanthar/ai-task-assistant)
 
-**Developed by [sivanishanthar](https://github.com/sivanishanthar)**
+**Developed by [Siva Ramachandran](https://github.com/sivanishanthar)**
