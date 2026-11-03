@@ -1,28 +1,27 @@
+
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 
 import { writeFile } from "../src/tools/writeFileTool.js";
-
-const workspace = path.resolve("workspace");
-
-// Generate a unique filename for each test
-function getTestFileName() {
-    return `Test_${randomUUID()}.txt`;
-}
 
 // TC011 - Write content to a new file
 test("TC011 - Write content to a new file", async () => {
 
-    const fileName = getTestFileName();
-    const filePath = path.join(workspace, fileName);
+    const testWorkspace = await fs.mkdtemp(
+        path.join(os.tmpdir(), "ai-agent-write-test-")
+    );
 
     try {
+        const fileName = "TestNewFile.txt";
+        const filePath = path.join(testWorkspace, fileName);
+
         const result = await writeFile(
             fileName,
-            "Hello from automated testing!"
+            "Hello from automated testing!",
+            testWorkspace
         );
 
         assert.match(result, /successfully written/i);
@@ -32,60 +31,111 @@ test("TC011 - Write content to a new file", async () => {
         assert.equal(content, "Hello from automated testing!");
 
     } finally {
-        await fs.rm(filePath, { force: true });
+        await fs.rm(testWorkspace, {
+            recursive: true,
+            force: true
+        });
     }
 });
 
 // TC012 - Write content to an existing empty file
 test("TC012 - Write content to an existing empty file", async () => {
 
-    const fileName = getTestFileName();
-    const filePath = path.join(workspace, fileName);
+    const testWorkspace = await fs.mkdtemp(
+        path.join(os.tmpdir(), "ai-agent-write-test-")
+    );
 
     try {
-        await fs.mkdir(workspace, { recursive: true });
+        const fileName = "TestEmptyFile.txt";
+        const filePath = path.join(testWorkspace, fileName);
+
         await fs.writeFile(filePath, "");
 
-        await writeFile(fileName, "Playwright Test Plan");
+        const result = await writeFile(
+            fileName,
+            "Playwright Test Plan",
+            testWorkspace
+        );
+
+        assert.match(result, /successfully written/i);
 
         const content = await fs.readFile(filePath, "utf8");
 
         assert.equal(content, "Playwright Test Plan");
 
     } finally {
-        await fs.rm(filePath, { force: true });
+        await fs.rm(testWorkspace, {
+            recursive: true,
+            force: true
+        });
     }
 });
 
 // TC013 - Reject invalid filename
 test("TC013 - Reject invalid filename", async () => {
 
-    await assert.rejects(
-        writeFile("../secret.txt", "Test content"),
-        /Invalid file name/
+    const testWorkspace = await fs.mkdtemp(
+        path.join(os.tmpdir(), "ai-agent-write-test-")
     );
+
+    try {
+        await assert.rejects(
+            writeFile("../secret.txt", "Test content", testWorkspace),
+            /Invalid file name/
+        );
+
+    } finally {
+        await fs.rm(testWorkspace, {
+            recursive: true,
+            force: true
+        });
+    }
 });
 
 // TC014 - Reject invalid content
 test("TC014 - Reject invalid content", async () => {
 
-    await assert.rejects(
-        writeFile(getTestFileName(), 12345),
-        /Content must be a string/
+    const testWorkspace = await fs.mkdtemp(
+        path.join(os.tmpdir(), "ai-agent-write-test-")
     );
+
+    try {
+        await assert.rejects(
+            writeFile("TestInvalidContent.txt", 12345, testWorkspace),
+            /Content must be a string/
+        );
+
+    } finally {
+        await fs.rm(testWorkspace, {
+            recursive: true,
+            force: true
+        });
+    }
 });
 
 // TC015 - Prevent overwriting an existing file
 test("TC015 - Prevent overwriting an existing file", async () => {
 
-    const fileName = getTestFileName();
-    const filePath = path.join(workspace, fileName);
+    const testWorkspace = await fs.mkdtemp(
+        path.join(os.tmpdir(), "ai-agent-write-test-")
+    );
 
     try {
-        await writeFile(fileName, "Original content");
+        const fileName = "TestOverwrite.txt";
+        const filePath = path.join(testWorkspace, fileName);
+
+        await writeFile(
+            fileName,
+            "Original content",
+            testWorkspace
+        );
 
         await assert.rejects(
-            writeFile(fileName, "Modified content"),
+            writeFile(
+                fileName,
+                "Modified content",
+                testWorkspace
+            ),
             /Overwriting is not allowed/
         );
 
@@ -94,6 +144,9 @@ test("TC015 - Prevent overwriting an existing file", async () => {
         assert.equal(content, "Original content");
 
     } finally {
-        await fs.rm(filePath, { force: true });
+        await fs.rm(testWorkspace, {
+            recursive: true,
+            force: true
+        });
     }
 });

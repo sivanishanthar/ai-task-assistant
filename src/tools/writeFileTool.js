@@ -1,11 +1,13 @@
+
 import fs from "node:fs/promises";
 import path from "node:path";
 
-// Define workspace directory
-const workspace = path.resolve("workspace");
-
 // Function to write content into a file
-export async function writeFile(fileName, content) {
+export async function writeFile(
+    fileName,
+    content,
+    workspace = path.resolve("workspace")
+) {
 
     // Validate filename
     if (
@@ -30,17 +32,19 @@ export async function writeFile(fileName, content) {
     // This prevents accidental overwriting of user content.
     try {
         const handle = await fs.open(filePath, "wx");
+
         try {
             await handle.writeFile(content, "utf8");
         } finally {
             await handle.close();
         }
+
     } catch (error) {
         if (error.code !== "EEXIST") {
             throw error;
         }
 
-        // Existing files must be empty.
+        // Existing files must be empty
         const stats = await fs.lstat(filePath);
 
         if (!stats.isFile() || stats.size !== 0) {
@@ -49,17 +53,20 @@ export async function writeFile(fileName, content) {
             );
         }
 
-        // Use an exclusive file handle to avoid following symlinks.
+        // Open the existing empty file
         const handle = await fs.open(filePath, "r+");
 
         try {
             const currentStats = await handle.stat();
 
             if (!currentStats.isFile() || currentStats.size !== 0) {
-                throw new Error("File is no longer an empty regular file.");
+                throw new Error(
+                    "File is no longer an empty regular file."
+                );
             }
 
             await handle.writeFile(content, "utf8");
+
         } finally {
             await handle.close();
         }
