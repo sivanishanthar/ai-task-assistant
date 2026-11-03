@@ -150,3 +150,93 @@ test("TC015 - Prevent overwriting an existing file", async () => {
         });
     }
 });
+
+
+//
+// TC023 - Reject writing to a directory
+//
+test("TC023 - Reject writing to a directory", async () => {
+
+    const testWorkspace = await fs.mkdtemp(
+        path.join(os.tmpdir(), "ai-agent-write-test-")
+    );
+
+    try {
+        // Create a directory with a valid file-like name
+        const folderName = "TestDirectory.txt";
+        const folderPath = path.join(testWorkspace, folderName);
+
+        await fs.mkdir(folderPath);
+
+        // Writing to a directory must be rejected
+        await assert.rejects(
+            writeFile(
+                folderName,
+                "This should not be written",
+                testWorkspace
+            ),
+            /Overwriting is not allowed/
+        );
+
+        // Verify that the directory still exists
+        const stats = await fs.stat(folderPath);
+
+        assert.equal(stats.isDirectory(), true);
+
+    } finally {
+        await fs.rm(testWorkspace, {
+            recursive: true,
+            force: true
+        });
+    }
+});
+
+//
+// TC024 - Reject writing through a symbolic link
+//
+test("TC024 - Reject writing through a symbolic link", async () => {
+
+    const testWorkspace = await fs.mkdtemp(
+        path.join(os.tmpdir(), "ai-agent-write-test-")
+    );
+
+    try {
+        const targetPath = path.join(
+            testWorkspace,
+            "OriginalFile.txt"
+        );
+
+        const linkPath = path.join(
+            testWorkspace,
+            "LinkedFile.txt"
+        );
+
+        // Create a target file with existing content
+        await fs.writeFile(targetPath, "Protected content");
+
+        // Create a symbolic link pointing to the target
+        await fs.symlink(targetPath, linkPath);
+
+        // Writing through the symbolic link must be rejected
+        await assert.rejects(
+            writeFile(
+                "LinkedFile.txt",
+                "Modified content",
+                testWorkspace
+            ),
+            /Overwriting is not allowed/
+        );
+
+        // Ensure the original content remains unchanged
+        const content = await fs.readFile(targetPath, "utf8");
+
+        assert.equal(content, "Protected content");
+
+    } finally {
+        await fs.rm(testWorkspace, {
+            recursive: true,
+            force: true
+        });
+    }
+});
+
