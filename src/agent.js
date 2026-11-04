@@ -102,7 +102,7 @@ const tools = [
       name: "write_file",
 
       description:
-        "Write text content into a new or empty file inside the workspace directory. Existing nonempty files cannot be overwritten.",
+        "Create a new file containing text inside the workspace directory. All existing files, including empty files, are rejected. Call this tool directly when creating a file with content; do not call create_file first.",
 
       parameters: {
         type: "object",

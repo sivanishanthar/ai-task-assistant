@@ -15,7 +15,7 @@ The assistant currently supports five operations:
 - **Create folders** — Create a new folder inside the application's workspace.
 - **Create files** — Create a new empty file without replacing an existing one.
 - **List files and folders** — See what is currently stored in the workspace.
-- **Write to files** — Add text to a new or empty file while protecting existing content.
+- **Write to files** — Create a new file containing text. All existing files, including empty files, are protected.
 - **Read files** — Read the contents of a text file, with a 100 KB size limit.
 
 The assistant also remembers the conversation while it's running, so users can continue interacting with it without starting a new session for every request.
@@ -183,18 +183,35 @@ To run the tests with code coverage:
 node --test --experimental-test-coverage tests/*.test.js
 ```
 
-### Latest Test Results
+### Write Safety
 
-| Metric | Result |
-| --- | --- |
-| Automated tests | 22 |
-| Passed | 22 |
-| Failed | 0 |
-| Tool code line coverage | 96.91% |
-| Tool code branch coverage | 94.44% |
-| Tool function coverage | 100% |
+`writeFile(fileName, content, workspace?)` now creates files only. Existing empty
+files are rejected too: use `write_file` directly to create a file with content,
+instead of creating an empty file first. The arguments and success response are
+unchanged.
 
-These are the results from my verified test run. There are still a few error-handling branches in `writeFileTool.js` that I plan to cover with additional tests.
+The writer runs in an isolated Node child process, selects each directory
+relative to its pinned working directory, and checks directory identity after
+selection. Symbolic links anywhere in the workspace path are rejected. On macOS,
+use physical paths such as `/private/tmp` rather than the `/tmp` symlink when
+supplying a custom workspace. The final workspace must belong to the current
+user and must not be writable by group or others. Newly created directories use
+mode `0700` and output files use mode `0600` (subject to the process umask).
+
+Content is written in a private staging directory, then published using an atomic
+hard link that fails if the destination already exists. Existing files, hard
+links, symbolic links, and directories are never opened for writing. Staging is
+cleaned on ordinary success and failure. An abrupt process or machine termination
+may leave a `.ai-write-*` staging directory; no incomplete destination is
+published. This is atomic publication, not a crash-durability guarantee.
+
+This implementation supports macOS and Linux on filesystems supporting hard
+links. Windows and filesystems that cannot perform the required operations fail
+closed. The child process adds startup overhead per write and requires Node child
+process execution to be permitted. This is not an isolation boundary against a
+malicious process running as the same OS user, which can access the agent's files
+and private staging directories. Other file tools retain their separate behavior
+and have not received this hardening.
 
 ### Test Isolation
 
@@ -226,7 +243,7 @@ You can see the latest results here:
 
 While building this project, I tried to keep the tools simple and predictable.
 
-For example, the assistant checks filenames before using them and prevents nonempty files from being accidentally overwritten. The file-reading tool also checks that the requested path is a regular file and rejects files over 100 KB.
+For example, the assistant checks filenames before using them and rejects writes to all existing files, including empty files. The file-reading tool also checks that the requested path is a regular file and rejects files over 100 KB.
 
 These checks reduce the risk of unexpected file operations, although the project is still a learning application and hasn't been security-audited. Some filesystem operations can also be affected by race conditions.
 

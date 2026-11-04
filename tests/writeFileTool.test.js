@@ -1,332 +1,135 @@
-
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-
 import { writeFile } from "../src/tools/writeFileTool.js";
 
-// TC011 - Write content to a new file
-test("TC011 - Write content to a new file", async () => {
-
-    const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-write-test-")
-    );
-
-    try {
-        const fileName = "TestNewFile.txt";
-        const filePath = path.join(testWorkspace, fileName);
-
-        const result = await writeFile(
-            fileName,
-            "Hello from automated testing!",
-            testWorkspace
-        );
-
-        assert.match(result, /successfully written/i);
-
-        const content = await fs.readFile(filePath, "utf8");
-
-        assert.equal(content, "Hello from automated testing!");
-
-    } finally {
-        await fs.rm(testWorkspace, {
-            recursive: true,
-            force: true
-        });
-    }
-});
-
-// TC012 - Write content to an existing empty file
-test("TC012 - Write content to an existing empty file", async () => {
-
-    const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-write-test-")
-    );
-
-    try {
-        const fileName = "TestEmptyFile.txt";
-        const filePath = path.join(testWorkspace, fileName);
-
-        await fs.writeFile(filePath, "");
-
-        const result = await writeFile(
-            fileName,
-            "Playwright Test Plan",
-            testWorkspace
-        );
-
-        assert.match(result, /successfully written/i);
-
-        const content = await fs.readFile(filePath, "utf8");
-
-        assert.equal(content, "Playwright Test Plan");
-
-    } finally {
-        await fs.rm(testWorkspace, {
-            recursive: true,
-            force: true
-        });
-    }
-});
-
-// TC013 - Reject invalid filename
-test("TC013 - Reject invalid filename", async () => {
-
-    const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-write-test-")
-    );
-
-    try {
-        await assert.rejects(
-            writeFile("../secret.txt", "Test content", testWorkspace),
-            /Invalid file name/
-        );
-
-    } finally {
-        await fs.rm(testWorkspace, {
-            recursive: true,
-            force: true
-        });
-    }
-});
-
-// TC014 - Reject invalid content
-test("TC014 - Reject invalid content", async () => {
-
-    const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-write-test-")
-    );
-
-    try {
-        await assert.rejects(
-            writeFile("TestInvalidContent.txt", 12345, testWorkspace),
-            /Content must be a string/
-        );
-
-    } finally {
-        await fs.rm(testWorkspace, {
-            recursive: true,
-            force: true
-        });
-    }
-});
-
-// TC015 - Prevent overwriting an existing file
-test("TC015 - Prevent overwriting an existing file", async () => {
-
-    const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-write-test-")
-    );
-
-    try {
-        const fileName = "TestOverwrite.txt";
-        const filePath = path.join(testWorkspace, fileName);
-
-        await writeFile(
-            fileName,
-            "Original content",
-            testWorkspace
-        );
-
-        await assert.rejects(
-            writeFile(
-                fileName,
-                "Modified content",
-                testWorkspace
-            ),
-            /Overwriting is not allowed/
-        );
-
-        const content = await fs.readFile(filePath, "utf8");
-
-        assert.equal(content, "Original content");
-
-    } finally {
-        await fs.rm(testWorkspace, {
-            recursive: true,
-            force: true
-        });
-    }
-});
-
-
-//
-// TC023 - Reject writing to a directory
-//
-test("TC023 - Reject writing to a directory", async () => {
-
-    const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-write-test-")
-    );
-
-    try {
-        // Create a directory with a valid file-like name
-        const folderName = "TestDirectory.txt";
-        const folderPath = path.join(testWorkspace, folderName);
-
-        await fs.mkdir(folderPath);
-
-        // Writing to a directory must be rejected
-        await assert.rejects(
-            writeFile(
-                folderName,
-                "This should not be written",
-                testWorkspace
-            ),
-            /Overwriting is not allowed/
-        );
-
-        // Verify that the directory still exists
-        const stats = await fs.stat(folderPath);
-
-        assert.equal(stats.isDirectory(), true);
-
-    } finally {
-        await fs.rm(testWorkspace, {
-            recursive: true,
-            force: true
-        });
-    }
-});
-
-//
-// TC024 - Reject writing through a symbolic link
-//
-test("TC024 - Reject writing through a symbolic link", async () => {
-
-    const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-write-test-")
-    );
-
-    try {
-        const targetPath = path.join(
-            testWorkspace,
-            "OriginalFile.txt"
-        );
-
-        const linkPath = path.join(
-            testWorkspace,
-            "LinkedFile.txt"
-        );
-
-        // Create a target file with existing content
-        await fs.writeFile(targetPath, "Protected content");
-
-        // Create a symbolic link pointing to the target
-        await fs.symlink(targetPath, linkPath);
-
-        // Writing through the symbolic link must be rejected
-        await assert.rejects(
-            writeFile(
-                "LinkedFile.txt",
-                "Modified content",
-                testWorkspace
-            ),
-            /Overwriting is not allowed/
-        );
-
-        // Ensure the original content remains unchanged
-        const content = await fs.readFile(targetPath, "utf8");
-
-        assert.equal(content, "Protected content");
-
-    } finally {
-        await fs.rm(testWorkspace, {
-            recursive: true,
-            force: true
-        });
-    }
-});
-
-
-// Each hook runs at a precise operation boundary; no timer-based races.
-async function safetyWorkspace(t) {
-    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "ai-agent-safety-"));
+async function fixture(t) {
+    // macOS exposes /var through a system symlink; use its physical path.
+    const workspace = await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()), "ai-write-"));
     t.after(() => fs.rm(workspace, { recursive: true, force: true }));
     return workspace;
 }
 
-for (const dangling of [false, true]) {
-    test(`Reject a symlink to an ${dangling ? "absent" : "empty"} target`, async (t) => {
-        const workspace = await safetyWorkspace(t);
+test("TC011 - Write content to a new file", async t => {
+    const workspace = await fixture(t);
+    assert.equal(await writeFile("file.txt", "Hello ✓", workspace), "Content successfully written to 'file.txt'.");
+    assert.equal(await fs.readFile(path.join(workspace, "file.txt"), "utf8"), "Hello ✓");
+    assert.deepEqual(await fs.readdir(workspace), ["file.txt"]);
+});
+
+test("TC012 - Reject an existing empty file (create-only policy)", async t => {
+    const workspace = await fixture(t);
+    await fs.writeFile(path.join(workspace, "file.txt"), "");
+    await assert.rejects(writeFile("file.txt", "unsafe", workspace), /Overwriting is not allowed/);
+    assert.equal(await fs.readFile(path.join(workspace, "file.txt"), "utf8"), "");
+});
+
+test("TC013 - Reject invalid filename", async t => {
+    await assert.rejects(writeFile("../file.txt", "unsafe", await fixture(t)), /Invalid file name/);
+});
+
+test("TC014 - Reject invalid content", async t => {
+    await assert.rejects(writeFile("file.txt", 123, await fixture(t)), /Content must be a string/);
+});
+
+test("TC015 - Prevent overwriting an existing file", async t => {
+    const workspace = await fixture(t);
+    await writeFile("file.txt", "PROTECTED", workspace);
+    await assert.rejects(writeFile("file.txt", "unsafe", workspace), /Overwriting is not allowed/);
+    assert.equal(await fs.readFile(path.join(workspace, "file.txt"), "utf8"), "PROTECTED");
+});
+
+test("TC023 - Reject writing to a directory", async t => {
+    const workspace = await fixture(t);
+    await fs.mkdir(path.join(workspace, "file.txt"));
+    await assert.rejects(writeFile("file.txt", "unsafe", workspace), /Overwriting is not allowed/);
+    assert.equal((await fs.stat(path.join(workspace, "file.txt"))).isDirectory(), true);
+});
+
+for (const content of ["PROTECTED", "", null]) {
+    test(`TC024 - Reject a symbolic link with ${content === null ? "missing" : "existing"} target (${JSON.stringify(content)})`, async t => {
+        const workspace = await fixture(t);
         const target = path.join(workspace, "target.txt");
-        if (!dangling) await fs.writeFile(target, "");
-        await fs.symlink(target, path.join(workspace, "link.txt"));
-        await assert.rejects(writeFile("link.txt", "unsafe", workspace), /Overwriting is not allowed/);
-        if (dangling) await assert.rejects(fs.stat(target), { code: "ENOENT" });
-        else assert.equal(await fs.readFile(target, "utf8"), "");
+        if (content !== null) await fs.writeFile(target, content);
+        await fs.symlink(target, path.join(workspace, "file.txt"));
+        await assert.rejects(writeFile("file.txt", "unsafe", workspace), /Overwriting is not allowed/);
+        if (content === null) await assert.rejects(fs.stat(target), { code: "ENOENT" });
+        else assert.equal(await fs.readFile(target, "utf8"), content);
     });
 }
 
-for (const replacement of ["symlink", "file", "removed", "grown"]) {
-    test(`Reject entry ${replacement} after lstat`, async (t) => {
-        const workspace = await safetyWorkspace(t);
-        const file = path.join(workspace, "file.txt");
-        const target = path.join(workspace, "target.txt");
-        await fs.writeFile(file, "");
-        await fs.writeFile(target, "");
-        const originalLstat = fs.lstat.bind(fs);
-        t.mock.method(fs, "lstat", async (...args) => {
-            const stats = await originalLstat(...args);
-            if (args[0] === file) {
-                if (replacement === "grown") await fs.writeFile(file, "protected");
-                else {
-                    // Keep the original inode alive so identity cannot be recycled.
-                    await fs.rename(file, path.join(workspace, "original.txt"));
-                    if (replacement === "symlink") await fs.symlink(target, file);
-                    if (replacement === "file") await fs.writeFile(file, "");
-                }
-            }
-            return stats;
-        });
-        await assert.rejects(writeFile("file.txt", "unsafe", workspace), (error) => {
-            if (replacement === "symlink") return error.code === "ELOOP";
-            if (replacement === "removed") return error.code === "ENOENT";
-            return /same empty regular file/.test(error.message);
-        });
-        assert.equal(await fs.readFile(target, "utf8"), "");
-        if (replacement === "file") assert.equal(await fs.readFile(file, "utf8"), "");
-        if (replacement === "grown") assert.equal(await fs.readFile(file, "utf8"), "protected");
-    });
-}
-
-for (const stage of ["mkdir", "open", "lstat", "existingOpen", "stat", "writeFile", "close"]) {
-    test(`Propagate ${stage} failure and close acquired handles`, async (t) => {
-        const workspace = await safetyWorkspace(t);
-        const failure = Object.assign(new Error(`injected ${stage}`), {
-            // EEXIST from a write/close must never trigger the open fallback.
-            code: ["writeFile", "close"].includes(stage) ? "EEXIST" : "EIO"
-        });
-        let closes = 0;
-        let opens = 0;
-        const stats = { isFile: () => true, size: 0, dev: 1, ino: 2 };
-        const existing = ["lstat", "existingOpen", "stat"].includes(stage);
-        const handle = {
-            async stat() { if (stage === "stat") throw failure; return stats; },
-            async writeFile() { if (stage === "writeFile") throw failure; },
-            async close() { closes++; if (stage === "close") throw failure; }
-        };
-        if (stage === "mkdir") t.mock.method(fs, "mkdir", async () => { throw failure; });
-        t.mock.method(fs, "open", async () => {
-            opens++;
-            if (stage === "open" || (stage === "existingOpen" && opens === 2)) throw failure;
-            if (existing && opens === 1) throw Object.assign(new Error("exists"), { code: "EEXIST" });
-            return handle;
-        });
-        t.mock.method(fs, "lstat", async () => {
-            if (stage === "lstat") throw failure;
-            return stats;
-        });
-        await assert.rejects(writeFile("file.txt", "content", workspace), error => error === failure);
-        assert.equal(closes, ["stat", "writeFile", "close"].includes(stage) ? 1 : 0);
-        if (["writeFile", "close"].includes(stage)) assert.equal(opens, 1);
-    });
-}
-
-test("Create a missing workspace and accept empty content", async (t) => {
-    const workspace = path.join(await safetyWorkspace(t), "nested", "workspace");
+test("Create a missing workspace and accept empty content", async t => {
+    const workspace = path.join(await fixture(t), "nested", "workspace");
     await writeFile("empty.txt", "", workspace);
     assert.equal(await fs.readFile(path.join(workspace, "empty.txt"), "utf8"), "");
+    assert.deepEqual(await fs.readdir(workspace), ["empty.txt"]);
+});
+
+test("Simultaneous creates have one winner and preserve its complete content", async t => {
+    const workspace = await fixture(t);
+    const contents = ["a".repeat(200000), "b".repeat(200000), "c".repeat(200000)];
+    const results = await Promise.allSettled(contents.map(content => writeFile("file.txt", content, workspace)));
+    assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
+    const winner = results.findIndex(result => result.status === "fulfilled");
+    assert.equal(await fs.readFile(path.join(workspace, "file.txt"), "utf8"), contents[winner]);
+    for (const result of results.filter(result => result.status === "rejected")) {
+        assert.equal(result.reason.code, "EEXIST");
+    }
+    assert.deepEqual(await fs.readdir(workspace), ["file.txt"]);
+});
+
+test("Worker launch supports a caller using --input-type=module", async t => {
+    const workspace = await fixture(t);
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const moduleURL = new URL("../src/tools/writeFileTool.js", import.meta.url).href;
+    const script = `import { writeFile } from ${JSON.stringify(moduleURL)}; await writeFile('file.txt', 'hello', process.argv[1]);`;
+    await promisify(execFile)(process.execPath, ["--input-type=module", "-e", script, workspace]);
+    assert.equal(await fs.readFile(path.join(workspace, "file.txt"), "utf8"), "hello");
+});
+
+for (const outcome of ["spawn-error", "send-error", "unexpected-exit", "worker-error"]) {
+    test(`Worker transport propagates ${outcome}`, async t => {
+        const { default: childProcess } = await import("node:child_process");
+        const { EventEmitter } = await import("node:events");
+        const failure = Object.assign(new Error("injected transport error"), { code: "EIO" });
+        const child = new EventEmitter();
+        let killed = false;
+        child.kill = () => { killed = true; };
+        child.send = (request, callback) => {
+            queueMicrotask(() => {
+                if (outcome === "spawn-error") return child.emit("error", failure);
+                if (outcome === "send-error") return callback(failure);
+                callback(null);
+                if (outcome === "worker-error") child.emit("message", {
+                    ok: false, message: "injected worker error", code: "EIO",
+                    cleanupErrors: [{ message: "injected cleanup error" }]
+                });
+                child.emit("exit", 1, null);
+            });
+        };
+        t.mock.method(childProcess, "fork", () => child);
+        await assert.rejects(writeFile("file.txt", "hello", "/unused"), error => {
+            if (["spawn-error", "send-error"].includes(outcome)) assert.equal(error, failure);
+            if (outcome === "unexpected-exit") assert.match(error.message, /exited unexpectedly/);
+            if (outcome === "worker-error") {
+                assert.equal(error.code, "EIO");
+                assert.equal(error.cleanupErrors[0].message, "injected cleanup error");
+            }
+            return true;
+        });
+        assert.equal(killed, outcome === "send-error");
+    });
+}
+
+test("Default workspace argument still creates workspace in the caller's cwd", async t => {
+    const root = await fixture(t);
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const moduleURL = new URL("../src/tools/writeFileTool.js", import.meta.url).href;
+    const script = `import { writeFile } from ${JSON.stringify(moduleURL)}; await writeFile('file.txt', 'default');`;
+    await promisify(execFile)(process.execPath, ["--input-type=module", "-e", script], { cwd: root });
+    assert.equal(await fs.readFile(path.join(root, "workspace", "file.txt"), "utf8"), "default");
 });
