@@ -1,4 +1,5 @@
 import path from "node:path";
+import { performance } from "node:perf_hooks";
 import { tools } from "./agentTools.js";
 import { createFolder } from "./tools/folderTool.js";
 import { listFiles } from "./tools/listFilesTool.js";
@@ -29,25 +30,29 @@ export function createAgent({
   workspace = path.resolve("workspace"),
   onToolCall = () => {},
   onToolResult = () => {},
+  logger,
 }) {
   const directory = path.resolve(workspace);
   const messages = [{ ...SYSTEM_MESSAGE }];
+  const toolNames = new Set(tools.map(tool => tool.function.name));
 
   async function executeTool(toolCall) {
     const toolName = toolCall.function.name;
     try {
       const args = JSON.parse(toolCall.function.arguments);
       // Always use the configured workspace, never a model-supplied argument.
+      let content;
       switch (toolName) {
-        case "create_folder": return await createFolder(args.folderName, directory);
-        case "list_files": return JSON.stringify(await listFiles(directory));
-        case "create_file": return await createFile(args.fileName, directory);
-        case "write_file": return await writeFile(args.fileName, args.content, directory);
-        case "read_file": return await readFile(args.fileName, directory);
-        default: return `Error: Unsupported tool '${toolName}'.`;
+        case "create_folder": content = await createFolder(args.folderName, directory); break;
+        case "list_files": content = JSON.stringify(await listFiles(directory)); break;
+        case "create_file": content = await createFile(args.fileName, directory); break;
+        case "write_file": content = await writeFile(args.fileName, args.content, directory); break;
+        case "read_file": content = await readFile(args.fileName, directory); break;
+        default: return { content: `Error: Unsupported tool '${toolName}'.`, success: false };
       }
+      return { content, success: true };
     } catch (error) {
-      return `Tool execution error: ${error.message}`;
+      return { content: `Tool execution error: ${error.message}`, success: false };
     }
   }
 
@@ -72,7 +77,19 @@ export function createAgent({
           messages.push(assistantMessage);
           for (const toolCall of assistantMessage.tool_calls) {
             onToolCall(toolCall.function.name);
-            const result = await executeTool(toolCall);
+            const started = performance.now();
+            const { content: result, success } = await executeTool(toolCall);
+            const durationMs = Math.max(0, performance.now() - started);
+            try {
+              // Pass metadata only. In particular, do not infer success from
+              // content: a valid file can contain text beginning with "Error:".
+              Promise.resolve(logger?.toolExecution({
+                tool: toolNames.has(toolCall.function.name) ? toolCall.function.name : "unknown", durationMs, success,
+              }))
+                .catch(() => {});
+            } catch {
+              // Custom logger failures must not affect tool execution/history.
+            }
             onToolResult(result);
             messages.push({ role: "tool", tool_call_id: toolCall.id, content: result });
           }

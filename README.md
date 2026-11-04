@@ -317,6 +317,44 @@ secret or OpenAI API spend is needed. Normal dependency installation still uses
 the npm registry. These tests verify application orchestration and tool behavior;
 scripted model responses do not prove a live model will choose the right tools.
 
+### Structured Diagnostic Logging
+
+The CLI emits one JSON line to **stderr** for every executed tool call:
+
+```json
+{"timestamp":"2026-11-04T12:00:00.000Z","event":"tool_execution","tool":"write_file","duration_ms":34.2,"status":"success"}
+```
+
+Duration uses a monotonic clock and includes the tool's filesystem worker time.
+Status comes from the actual execution outcome, not from matching text in the
+result. Rejected overwrites, invalid arguments, malformed JSON, unsupported
+tools, and filesystem failures are recorded as failures. Only the five known
+tool names are allowed; unknown names are logged as `unknown`.
+
+The logger constructs records from an allowlist. It excludes API keys, prompts,
+file contents, filenames, workspace paths, arguments, tool results, call IDs,
+raw errors, and stack traces. Request/startup/fatal errors generate a coarse
+`agent_failure` event with a fixed stage and no raw error message. The previous
+raw `[Tool result: ...]` console output has been removed. Synchronous and
+asynchronous logging-sink failures are best-effort and do not change tool results.
+
+The ordinary conversation remains on **stdout** and can intentionally contain
+file contents when the user asks to read them. A complete terminal transcript is
+therefore not a redacted diagnostic log. To capture application diagnostics
+separately, use:
+
+```bash
+npm start 2> tool-events.jsonl
+```
+
+No log files are written automatically, and no new dependencies or external
+logging service are required. Programmatic callers can pass a `logger` to
+`createAgent`; the CLI supplies `createLogger()` by default. Existing custom
+`onToolCall`/`onToolResult` hooks remain available and receive their original raw
+values, so custom hook implementations must apply their own privacy policy.
+Offline tests exercise metadata redaction, outcome classification, sink failures,
+and the actual CLI with fake SDK/terminal modules, including raw-error redaction.
+
 ### Test Isolation
 
 One improvement I made during development was separating the test environment from the application's actual workspace.
@@ -373,7 +411,7 @@ There are a few areas I'd like to explore as I continue improving the project:
 - Add more tests for error-handling scenarios.
 - Improve filesystem safety and error handling.
 - Add additional tools to make the assistant more useful.
-- Introduce logging to make troubleshooting easier.
+- Extend diagnostic logging with optional local analysis tools.
 - Add automated tests for the agent's tool-calling logic.
 - Explore storing conversation history between sessions.
 

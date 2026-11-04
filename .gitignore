@@ -20,3 +20,5 @@ coverage/
 
 
 *.code-workspace
+# Local structured diagnostic output
+/tool-events.jsonl
