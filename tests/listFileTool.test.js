@@ -10,7 +10,7 @@ import { listFiles } from "../src/tools/listFilesTool.js";
 test("TC008 - List files and folders in workspace", async () => {
 
     const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-test-")
+        path.join(await fs.realpath(os.tmpdir()), "ai-agent-test-")
     );
 
     try {
@@ -53,7 +53,7 @@ test("TC008 - List files and folders in workspace", async () => {
 test("TC009 - Verify listFiles returns an array", async () => {
 
     const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-test-")
+        path.join(await fs.realpath(os.tmpdir()), "ai-agent-test-")
     );
 
     try {
@@ -73,7 +73,7 @@ test("TC009 - Verify listFiles returns an array", async () => {
 test("TC010 - Verify file and folder information", async () => {
 
     const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-test-")
+        path.join(await fs.realpath(os.tmpdir()), "ai-agent-test-")
     );
 
     try {
@@ -112,7 +112,7 @@ test("TC010 - Verify file and folder information", async () => {
 test("TC022 - List files returns an array for an empty workspace", async () => {
 
     const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-test-")
+        path.join(await fs.realpath(os.tmpdir()), "ai-agent-test-")
     );
 
     try {

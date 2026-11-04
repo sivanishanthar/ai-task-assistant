@@ -210,8 +210,8 @@ links. Windows and filesystems that cannot perform the required operations fail
 closed. The child process adds startup overhead per write and requires Node child
 process execution to be permitted. This is not an isolation boundary against a
 malicious process running as the same OS user, which can access the agent's files
-and private staging directories. Other file tools retain their separate behavior
-and have not received this hardening.
+and private staging directories. `createFileTool.js` remains a separate
+implementation and has not received this hardening.
 
 ### Read Safety
 
@@ -238,6 +238,32 @@ Detected size or timestamp changes cause rejection, but reads are not immutable
 snapshots of files concurrently modified by another process. As with writes,
 this is not a security boundary against malicious processes running as the same
 OS user. Each read has child-process startup overhead.
+
+### Folder Creation and Listing Safety
+
+`createFolder(folderName, workspace?)` and `listFiles(workspace?)` retain their
+arguments, success message, and listing schema. Missing workspaces are created
+with mode `0700` (subject to umask), as with writes. Both operations use the shared
+pinned-directory traversal in an isolated Node child process, with the same
+macOS/Linux, physical-path, workspace-ownership, and permission requirements as
+reads and writes. Child-process startup adds overhead per call.
+
+Folder creation uses nonrecursive `mkdir` for the destination relative to the
+pinned workspace, with mode `0700`. Repeated creation succeeds only when the
+existing destination is a genuine directory. Existing symlinks, dangling links,
+and nondirectory entries are rejected; no symlink target is modified.
+
+Listing reads relative to the pinned directory. It returns only regular files
+and directories as `{ name, type: "file" | "folder" }`. Symlinks (including links
+to directories and dangling links), sockets, FIFOs, devices, and unknown entry
+types are omitted instead of being mislabeled as regular files. The agent's tool
+description reflects this behavior. Results describe entries observed during
+listing, not a guaranteed immutable snapshot or proof that a later operation on
+the same name is safe. Each later operation must apply its own checks.
+
+Renaming or replacing the workspace pathname after selection cannot redirect
+these operations to the replacement. The same limitation against malicious
+processes running as the current OS user still applies.
 
 ### Test Isolation
 

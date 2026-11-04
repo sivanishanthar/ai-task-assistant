@@ -10,7 +10,7 @@ import { createFolder } from "../src/tools/folderTool.js";
 test("TC001 - Create a folder with a valid name", async () => {
 
     const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-folder-test-")
+        path.join(await fs.realpath(os.tmpdir()), "ai-agent-folder-test-")
     );
 
     try {
@@ -37,7 +37,7 @@ test("TC001 - Create a folder with a valid name", async () => {
 test("TC002 - Reject folder names containing path traversal", async () => {
 
     const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-folder-test-")
+        path.join(await fs.realpath(os.tmpdir()), "ai-agent-folder-test-")
     );
 
     try {
@@ -58,7 +58,7 @@ test("TC002 - Reject folder names containing path traversal", async () => {
 test("TC003 - Reject empty folder names", async () => {
 
     const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-folder-test-")
+        path.join(await fs.realpath(os.tmpdir()), "ai-agent-folder-test-")
     );
 
     try {
@@ -79,7 +79,7 @@ test("TC003 - Reject empty folder names", async () => {
 test("TC004 - Reject folder names containing special characters", async () => {
 
     const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-folder-test-")
+        path.join(await fs.realpath(os.tmpdir()), "ai-agent-folder-test-")
     );
 
     try {

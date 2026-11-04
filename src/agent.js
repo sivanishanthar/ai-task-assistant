@@ -67,7 +67,7 @@ const tools = [
     type: "function",
     function: {
       name: "list_files",
-      description: "List all files and folders in the workspace directory.",
+      description: "List regular files and folders in the workspace directory. Symbolic links and special entries are omitted.",
       parameters: {
         type: "object",
         properties: {},
