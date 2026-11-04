@@ -1,6 +1,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import { constants } from "node:fs";
 
 // Function to write content into a file
 export async function writeFile(
@@ -28,48 +29,45 @@ export async function writeFile(
     // Ensure workspace exists
     await fs.mkdir(workspace, { recursive: true });
 
-    // Write only to a new file or an existing empty file.
-    // This prevents accidental overwriting of user content.
+    // Exclusive creation never follows an existing final-component symlink.
+    let handle;
     try {
-        const handle = await fs.open(filePath, "wx");
-
-        try {
-            await handle.writeFile(content, "utf8");
-        } finally {
-            await handle.close();
-        }
-
+        handle = await fs.open(filePath, "wx");
     } catch (error) {
+        // Only an open collision may enter the existing-file path.
         if (error.code !== "EEXIST") {
             throw error;
         }
 
-        // Existing files must be empty
         const stats = await fs.lstat(filePath);
-
         if (!stats.isFile() || stats.size !== 0) {
             throw new Error(
                 `File '${fileName}' already contains data. Overwriting is not allowed.`
             );
         }
 
-        // Open the existing empty file
-        const handle = await fs.open(filePath, "r+");
-
+        // Do not create, truncate, or follow a symlink if the entry changed.
+        handle = await fs.open(filePath, constants.O_RDWR | constants.O_NOFOLLOW);
         try {
             const currentStats = await handle.stat();
-
-            if (!currentStats.isFile() || currentStats.size !== 0) {
-                throw new Error(
-                    "File is no longer an empty regular file."
-                );
+            if (
+                !currentStats.isFile() ||
+                currentStats.size !== 0 ||
+                currentStats.dev !== stats.dev ||
+                currentStats.ino !== stats.ino
+            ) {
+                throw new Error("File is no longer the same empty regular file.");
             }
-
-            await handle.writeFile(content, "utf8");
-
-        } finally {
+        } catch (error) {
             await handle.close();
+            throw error;
         }
+    }
+
+    try {
+        await handle.writeFile(content, "utf8");
+    } finally {
+        await handle.close();
     }
 
     return `Content successfully written to '${fileName}'.`;
