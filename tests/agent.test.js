@@ -336,3 +336,156 @@ for (const name of ["create_file", "write_file"]) {
     openai.assertConsumed();
   });
 }
+
+for (const earlierRound of [false, true]) {
+  test(`Agent limits: oversized round ${earlierRound ? "after an accepted round" : "on the first response"} executes no calls from that batch`, async t => {
+    const { workspace } = await fixture(t);
+    const blocked = Array.from({ length: 6 }, (_, index) => tool(`blocked-${index}`, "write_file",
+      { fileName: `blocked_${index}.txt`, content: "unsafe" }));
+    const script = earlierRound ? [calls(tool("accepted", "create_file", { fileName: "accepted.txt" }))] : [];
+    script.push(calls(...blocked));
+    script.push(request => {
+      assert.ok(!request.messages.some(message => message.tool_calls?.some(call => call.id.startsWith("blocked-"))));
+      assert.equal(results(request).length, earlierRound ? 1 : 0);
+      assert.match(request.messages.at(-2).content, /Too many tool calls in one round/);
+      return calls(tool("next-turn", "write_file", { fileName: "next_turn.txt", content: "safe" }));
+    });
+    script.push(answer("Recovered."));
+    const openai = scriptedOpenAI(script);
+    const executed = [];
+    const logs = [];
+    const agent = createAgent({ openai, workspace, onToolCall: name => executed.push(name),
+      logger: { toolExecution: record => logs.push(record) } });
+    assert.match(await agent.respond("Run too many tools."), /maximum 5/);
+    assert.equal(executed.length, earlierRound ? 1 : 0);
+    assert.equal(logs.length, executed.length);
+    assert.equal(openai.requests.length, earlierRound ? 2 : 1, "stop without asking the model for another response");
+    assert.deepEqual(await fs.readdir(workspace), earlierRound ? ["accepted.txt"] : []);
+    assert.equal(await agent.respond("Try a smaller request."), "Recovered.");
+    assert.equal(await fs.readFile(path.join(workspace, "next_turn.txt"), "utf8"), "safe");
+    openai.assertConsumed();
+  });
+}
+
+test("Agent limits: ten total calls are accepted, an eleventh is blocked, and the next request has fresh budget", async t => {
+  const { workspace } = await fixture(t);
+  const batch = offset => calls(...Array.from({ length: 5 }, (_, index) =>
+    tool(`accepted-${offset + index}`, "create_file", { fileName: `accepted_${offset + index}.txt` })));
+  const openai = scriptedOpenAI([
+    batch(0), batch(5),
+    calls(tool("eleventh", "write_file", { fileName: "blocked.txt", content: "unsafe" })),
+    request => {
+      assert.equal(results(request).length, 10);
+      assert.ok(!request.messages.some(message => message.tool_calls?.some(call => call.id === "eleventh")));
+      assert.match(request.messages.at(-2).content, /maximum 10 per request/);
+      return calls(tool("fresh-budget", "create_file", { fileName: "fresh.txt" }));
+    },
+    answer("Created with fresh budget."),
+  ]);
+  const executed = [];
+  const agent = createAgent({ openai, workspace, onToolCall: name => executed.push(name) });
+  assert.match(await agent.respond("Create many files."), /maximum 10 per request/);
+  assert.equal(executed.length, 10);
+  assert.equal(openai.requests.length, 3);
+  assert.equal((await fs.readdir(workspace)).length, 10);
+  await assert.rejects(fs.stat(path.join(workspace, "blocked.txt")), { code: "ENOENT" });
+  assert.equal(await agent.respond("Create one more file."), "Created with fresh budget.");
+  assert.equal(executed.length, 11);
+  assert.equal((await fs.stat(path.join(workspace, "fresh.txt"))).size, 0);
+  openai.assertConsumed();
+});
+
+test("Agent limits: reject an entire batch exceeding remaining budget without executing even its first call", async t => {
+  const { workspace } = await fixture(t);
+  const openai = scriptedOpenAI([
+    calls(tool("first", "create_file", { fileName: "first.txt" }), tool("second", "create_file", { fileName: "second.txt" })),
+    calls(tool("would-fit-alone", "create_file", { fileName: "partial.txt" }),
+      tool("over-budget", "create_file", { fileName: "blocked.txt" })),
+    request => {
+      assert.equal(results(request).length, 2);
+      assert.ok(!request.messages.some(message => message.tool_calls?.some(call => call.id === "would-fit-alone")));
+      return answer("Ready.");
+    },
+  ]);
+  const agent = createAgent({ openai, workspace, maxToolCallsPerRequest: 3, maxToolCallsPerRound: 3 });
+  assert.match(await agent.respond("Use four calls."), /maximum 3 per request/);
+  assert.deepEqual((await fs.readdir(workspace)).sort(), ["first.txt", "second.txt"]);
+  assert.equal(await agent.respond("Continue."), "Ready.");
+  openai.assertConsumed();
+});
+
+test("Agent limits: failed and unsupported attempts count toward the total budget", async t => {
+  const { workspace } = await fixture(t);
+  const openai = scriptedOpenAI([
+    calls(tool("malformed", "write_file", "{bad"), tool("unsupported", "unsupported_tool")),
+    request => {
+      const outputs = results(request);
+      assert.match(outputs[0].content, /^Tool execution error:/);
+      assert.match(outputs[1].content, /^Error: Unsupported tool/);
+      return calls(tool("blocked", "create_file", { fileName: "blocked.txt" }));
+    },
+    answer("Ready for another request."),
+  ]);
+  const logs = [];
+  const agent = createAgent({ openai, workspace, maxToolCallsPerRequest: 2, maxToolCallsPerRound: 2,
+    logger: { toolExecution: record => logs.push(record) } });
+  assert.match(await agent.respond("Attempt three calls."), /maximum 2 per request/);
+  assert.deepEqual(logs.map(record => record.success), [false, false]);
+  assert.deepEqual(await fs.readdir(workspace), []);
+  assert.equal(await agent.respond("Continue."), "Ready for another request.");
+  openai.assertConsumed();
+});
+
+test("Agent limits: exact custom boundaries allow final text without a false limit error", async t => {
+  const { workspace } = await fixture(t);
+  const openai = scriptedOpenAI([
+    calls(tool("one", "create_file", { fileName: "one.txt" })),
+    calls(tool("two", "create_file", { fileName: "two.txt" })),
+    answer("Both files created."),
+  ]);
+  const agent = createAgent({ openai, workspace, maxToolCallsPerRequest: 2, maxToolCallsPerRound: 1 });
+  assert.equal(await agent.respond("Create two files."), "Both files created.");
+  assert.deepEqual((await fs.readdir(workspace)).sort(), ["one.txt", "two.txt"]);
+  openai.assertConsumed();
+});
+
+test("Agent limits: enforce a configured per-round cap independently of the total", async t => {
+  const { workspace } = await fixture(t);
+  const openai = scriptedOpenAI([
+    calls(tool("one", "create_file", { fileName: "one.txt" }), tool("two", "create_file", { fileName: "two.txt" })),
+  ]);
+  const agent = createAgent({ openai, workspace, maxToolCallsPerRequest: 10, maxToolCallsPerRound: 1 });
+  assert.match(await agent.respond("Create two files in one round."), /maximum 1/);
+  assert.deepEqual(await fs.readdir(workspace), []);
+  openai.assertConsumed();
+});
+
+test("Agent limits: API errors reset history and the next request receives a fresh call budget", async t => {
+  const { workspace } = await fixture(t);
+  const failure = new Error("Mock service failure after a tool");
+  const openai = scriptedOpenAI([
+    calls(tool("before-error", "create_file", { fileName: "before.txt" })), failure,
+    request => {
+      assert.deepEqual(request.messages.map(message => message.role), ["system", "user"]);
+      return calls(tool("after-error", "create_file", { fileName: "after.txt" }));
+    },
+    answer("Recovered."),
+  ]);
+  const agent = createAgent({ openai, workspace, maxToolCallsPerRequest: 1, maxToolCallsPerRound: 1 });
+  await assert.rejects(agent.respond("First request."), error => error === failure);
+  assert.equal(await agent.respond("Second request."), "Recovered.");
+  assert.deepEqual((await fs.readdir(workspace)).sort(), ["after.txt", "before.txt"]);
+  openai.assertConsumed();
+});
+
+test("Agent limits: reject invalid configuration before any API or tool work", () => {
+  let completions = 0;
+  const openai = { chat: { completions: { create() { completions++; } } } };
+  for (const name of ["maxToolCallsPerRequest", "maxToolCallsPerRound"]) {
+    for (const value of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, "5", null]) {
+      assert.throws(() => createAgent({ openai, [name]: value }),
+        error => error instanceof RangeError && error.message === `${name} must be a positive safe integer.`);
+    }
+  }
+  assert.equal(completions, 0);
+});

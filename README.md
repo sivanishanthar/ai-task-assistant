@@ -305,7 +305,7 @@ The tests script `chat.completions.create` responses while executing the real
 filesystem tools in isolated temporary workspaces. They cover folder creation,
 writing directly to a new file, listing and reading, overwrite rejection, empty
 file protection, invalid paths, workspace isolation, conversation memory,
-malformed arguments, unknown tools, API failures, and the five-round tool limit.
+malformed arguments, unknown tools, API failures, and tool execution limits.
 They also verify that every tool result is matched to the correct call ID and
 that subsequent requests contain valid message history. Network fetch calls are
 blocked in these tests; an additional subprocess test runs with an empty API key.
@@ -316,6 +316,40 @@ Actions runs the full suite with `OPENAI_API_KEY` explicitly empty; no repositor
 secret or OpenAI API spend is needed. Normal dependency installation still uses
 the npm registry. These tests verify application orchestration and tool behavior;
 scripted model responses do not prove a live model will choose the right tools.
+
+### Per-Request Tool Limits
+
+The CLI accepts at most **5 tool calls in one round** and **10 tool calls in a
+single user request**, while retaining the existing maximum of **5 rounds**.
+Failed calls, malformed arguments, and unsupported tool attempts count toward
+the total just like successful calls.
+
+A batch exceeding either the per-round cap or the remaining request budget is
+rejected in full before any call in that batch executes. It is not partially
+executed. Work completed in earlier accepted rounds remains in place. The agent
+returns a clear limit message without making another completion request for
+that rejected batch. A normal final text response is still allowed after exactly
+using the call budget.
+
+Rejected assistant tool requests are not stored in history and receive no fake
+tool results. Instead, the limit notice is saved as a plain assistant message,
+so later turns have valid history with no unresolved tool-call IDs. Each new
+user request starts with fresh budgets, including after a previous API error.
+Rejected calls do not invoke execution hooks or emit tool-execution log records.
+
+Programmatic callers can configure both call caps when creating an agent:
+
+```js
+const agent = createAgent({
+  openai,
+  maxToolCallsPerRequest: 10,
+  maxToolCallsPerRound: 5,
+});
+```
+
+Both options must be positive safe integers. The CLI uses these defaults;
+mocked tests verify exact boundaries, batch rejection, failed-attempt accounting,
+and valid history on subsequent requests without live API calls.
 
 ### Structured Diagnostic Logging
 

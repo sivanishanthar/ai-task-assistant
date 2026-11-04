@@ -31,7 +31,14 @@ export function createAgent({
   onToolCall = () => {},
   onToolResult = () => {},
   logger,
+  maxToolCallsPerRequest = 10,
+  maxToolCallsPerRound = 5,
 }) {
+  for (const [name, value] of Object.entries({ maxToolCallsPerRequest, maxToolCallsPerRound })) {
+    if (!Number.isSafeInteger(value) || value < 1) {
+      throw new RangeError(`${name} must be a positive safe integer.`);
+    }
+  }
   const directory = path.resolve(workspace);
   const messages = [{ ...SYSTEM_MESSAGE }];
   const toolNames = new Set(tools.map(tool => tool.function.name));
@@ -72,10 +79,28 @@ export function createAgent({
       try {
         let assistantMessage = await complete();
         let toolRounds = 0;
-        while (assistantMessage.tool_calls?.length && toolRounds < 5) {
+        let toolCallsUsed = 0;
+        while (assistantMessage.tool_calls?.length) {
+          const requestedCalls = assistantMessage.tool_calls.length;
+          let limitMessage;
+          if (toolRounds >= 5) {
+            limitMessage = "Tool execution limit reached. Please try a simpler request.";
+          } else if (requestedCalls > maxToolCallsPerRound) {
+            limitMessage = `Too many tool calls in one round (maximum ${maxToolCallsPerRound}). Please try a simpler request.`;
+          } else if (requestedCalls > maxToolCallsPerRequest - toolCallsUsed) {
+            limitMessage = `Tool call limit reached (maximum ${maxToolCallsPerRequest} per request). Please try a simpler request.`;
+          }
+          if (limitMessage) {
+            // Reject the whole batch before saving its assistant message or
+            // executing any of its calls. No unmatched tool IDs enter history.
+            messages.push({ role: "assistant", content: limitMessage });
+            return limitMessage;
+          }
           toolRounds++;
           messages.push(assistantMessage);
           for (const toolCall of assistantMessage.tool_calls) {
+            // Failures, malformed arguments, and unknown tools also spend budget.
+            toolCallsUsed++;
             onToolCall(toolCall.function.name);
             const started = performance.now();
             const { content: result, success } = await executeTool(toolCall);
@@ -94,10 +119,6 @@ export function createAgent({
             messages.push({ role: "tool", tool_call_id: toolCall.id, content: result });
           }
           assistantMessage = await complete();
-        }
-        // Do not save an assistant request whose tools were never executed.
-        if (assistantMessage.tool_calls?.length) {
-          return "Tool execution limit reached. Please try a simpler request.";
         }
         const content = assistantMessage.content ?? "No response received.";
         messages.push({ role: "assistant", content });
