@@ -6,6 +6,11 @@ const doubles = {
         if (process.env.LOG_TEST_MODE === 'constructor') throw new Error(process.env.LOG_TEST_PRIVATE_ERROR);
         let calls = 0;
         this.chat = { completions: { create: async () => {
+          if (process.env.LOG_TEST_MODE === 'request_timeout') {
+            const error = new Error(process.env.LOG_TEST_PRIVATE_ERROR);
+            error.name = 'APIConnectionTimeoutError';
+            throw error;
+          }
           if (process.env.LOG_TEST_MODE === 'request') {
             throw new Error(process.env.LOG_TEST_PRIVATE_ERROR);
           }

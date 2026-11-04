@@ -141,7 +141,7 @@ for (const asynchronous of [false, true]) {
   });
 }
 
-for (const mode of ["success", "request", "fatal", "startup", "constructor"]) {
+for (const mode of ["success", "request", "fatal", "startup", "constructor", "request_timeout", "invalid_timeout"]) {
   test(`CLI logging: ${mode} path excludes private prompts, content, key, filenames, and raw errors`, async t => {
     const { root, workspace } = await fixture(t);
     await fs.writeFile(path.join(workspace, PRIVATE_FILENAME), PRIVATE_CONTENT);
@@ -153,14 +153,15 @@ for (const mode of ["success", "request", "fatal", "startup", "constructor"]) {
         cwd: root,
         env: { ...process.env,
           OPENAI_API_KEY: mode === "startup" ? "" : PRIVATE_KEY,
+          API_TIMEOUT_MS: mode === "invalid_timeout" ? "0" : "30000", WORKER_TIMEOUT_MS: "10000",
           LOG_TEST_MODE: mode, LOG_TEST_PROMPT: PRIVATE_PROMPT,
           LOG_TEST_FILENAME: PRIVATE_FILENAME,
           LOG_TEST_PRIVATE_ERROR: [PRIVATE_KEY, PRIVATE_PROMPT, PRIVATE_CONTENT, PRIVATE_FILENAME].join(" "),
         },
       });
-      assert.ok(mode === "success" || mode === "request", "fatal/startup must exit with a failure code");
+      assert.ok(["success", "request", "request_timeout"].includes(mode), "fatal/startup must exit with a failure code");
     } catch (error) {
-      assert.ok(["fatal", "startup", "constructor"].includes(mode), `unexpected CLI failure: ${error.message}`);
+      assert.ok(["fatal", "startup", "constructor", "invalid_timeout"].includes(mode), `unexpected CLI failure: ${error.message}`);
       assert.equal(error.code, 1);
       output = error;
     }
@@ -175,8 +176,10 @@ for (const mode of ["success", "request", "fatal", "startup", "constructor"]) {
       assert.match(output.stdout, /Read completed/);
     } else {
       assert.deepEqual({ ...records[0], timestamp: undefined },
-        { timestamp: undefined, event: "agent_failure", stage: mode === "constructor" ? "fatal" : mode, status: "failure" });
+        { timestamp: undefined, event: "agent_failure", stage: mode === "constructor" ? "fatal" : mode === "request_timeout" ? "request" : mode === "invalid_timeout" ? "startup" : mode, status: "failure" });
     }
+    if (mode === "request_timeout") assert.match(output.stdout, /OpenAI request timed out/);
+    if (mode === "invalid_timeout") assert.match(output.stdout, /API_TIMEOUT_MS and WORKER_TIMEOUT_MS/);
     assert.ok(!output.stderr.includes("Tool result"));
   });
 }

@@ -351,6 +351,59 @@ Both options must be positive safe integers. The CLI uses these defaults;
 mocked tests verify exact boundaries, batch rejection, failed-attempt accounting,
 and valid history on subsequent requests without live API calls.
 
+### Configurable Timeouts
+
+The defaults are **30 seconds per OpenAI completion request** and **10 seconds
+per filesystem worker**, including startup, IPC, and waiting for worker exit.
+These are per operation, not a single deadline for the entire conversation turn.
+Configure the CLI through `.env` or environment variables:
+
+```env
+API_TIMEOUT_MS=30000
+WORKER_TIMEOUT_MS=10000
+```
+
+Both values must be integer milliseconds between `1` and `2147483647`. Zero,
+negative, fractional, invalid, or overflowing values are rejected before work
+starts. Programmatic callers can pass `apiTimeoutMs` and `workerTimeoutMs` to
+`createAgent`. Direct tools accept a trailing `{ timeoutMs }` option without
+changing their existing argument order or success responses:
+
+```js
+const agent = createAgent({ openai, apiTimeoutMs: 30000, workerTimeoutMs: 10000 });
+await readFile("notes.txt", workspace, { timeoutMs: 10000 });
+await writeFile("notes.txt", "text", workspace, { timeoutMs: 10000 });
+```
+
+OpenAI calls receive an `AbortSignal`, SDK timeout, and `maxRetries: 0`. The
+application deadline also rejects clients that ignore cancellation, and consumes
+late resolutions/rejections without executing late tool calls. Request messages
+are snapshotted before sending. This follows the SDK's documented
+[cancellation, timeout, and retry options](https://developers.openai.com/api/reference/typescript).
+On timeout, the core throws `OPENAI_TIMEOUT`; the CLI displays a clear safe error,
+resets conversation history, and accepts another request. Any already completed
+filesystem work remains in place.
+
+Worker deadlines send `SIGKILL` and reject with `WORKER_TIMEOUT`. The agent stops
+that turn instead of automatically retrying or executing more tools. Remaining
+calls from the same batch get explicit skipped results, matching every pending
+call ID and leaving valid history for the next turn. Only attempted tools are
+logged, with timeout attempts recorded as failures. Timers are cleared when work
+settles; late messages, errors, callbacks, and responses cannot change the result.
+
+**Termination is not rollback.** Files or directories may already exist, a write
+may already have been published, and private staging directories can remain after
+a worker is killed. No parent-side deletion is attempted. Inspect the workspace
+before retrying. `SIGKILL` is requested immediately, but the parent does not wait
+indefinitely for an OS that cannot reap the process promptly or refuses the kill.
+The error therefore reports an unknown outcome, not proof of cancellation before
+side effects. Logs continue to exclude prompts, keys, paths, content, and raw SDK
+or transport errors.
+
+Offline tests trigger deadlines with a controlled clock, verify abort signals and
+late-result handling, terminate an actual stalled Node worker after its startup
+acknowledgment, and verify recovery/history without live OpenAI calls or sleeps.
+
 ### Structured Diagnostic Logging
 
 The CLI emits one JSON line to **stderr** for every executed tool call:
