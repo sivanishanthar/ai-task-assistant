@@ -11,7 +11,7 @@ import { readFile } from "../src/tools/readFileTool.js";
 test("TC016 - Read an existing file", async () => {
 
     const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-read-test-")
+        path.join(await fs.realpath(os.tmpdir()), "ai-agent-read-test-")
     );
 
     try {
@@ -42,7 +42,7 @@ test("TC016 - Read an existing file", async () => {
 test("TC017 - Read a nonexistent file", async () => {
 
     const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-read-test-")
+        path.join(await fs.realpath(os.tmpdir()), "ai-agent-read-test-")
     );
 
     try {
@@ -63,7 +63,7 @@ test("TC017 - Read a nonexistent file", async () => {
 test("TC018 - Reject invalid filename", async () => {
 
     const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-read-test-")
+        path.join(await fs.realpath(os.tmpdir()), "ai-agent-read-test-")
     );
 
     try {
@@ -84,7 +84,7 @@ test("TC018 - Reject invalid filename", async () => {
 test("TC019 - Reject reading a directory", async () => {
 
     const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-read-test-")
+        path.join(await fs.realpath(os.tmpdir()), "ai-agent-read-test-")
     );
 
     try {
@@ -111,7 +111,7 @@ test("TC019 - Reject reading a directory", async () => {
 test("TC020 - Reject files larger than 100 KB", async () => {
 
     const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-read-test-")
+        path.join(await fs.realpath(os.tmpdir()), "ai-agent-read-test-")
     );
 
     try {
@@ -140,7 +140,7 @@ test("TC020 - Reject files larger than 100 KB", async () => {
 test("TC021 - Read an empty file", async () => {
 
     const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-read-test-")
+        path.join(await fs.realpath(os.tmpdir()), "ai-agent-read-test-")
     );
 
     try {

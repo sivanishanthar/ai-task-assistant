@@ -1,11 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { constants } from "node:fs";
+import { enterWorkspace } from "./workspaceDirectory.js";
 import { fileURLToPath } from "node:url";
-
-function sameDirectory(a, b) {
-    return b.isDirectory() && a.dev === b.dev && a.ino === b.ino;
-}
 
 // Internal worker: call only from its isolated child process. The optional IO
 // adapter lets tests inject replacements at exact boundaries without timers.
@@ -15,57 +11,7 @@ export async function writeInWorkspace({ workspace, fileName, content }, io = { 
         throw new Error("Invalid file name.");
     }
     if (typeof content !== "string") throw new Error("Content must be a string.");
-    if (typeof workspace !== "string" || !path.isAbsolute(workspace) || path.resolve(workspace) !== workspace) {
-        throw new Error("Workspace must be a normalized absolute path.");
-    }
-    if (io.process.platform === "win32") {
-        throw new Error("Secure workspace writes currently require macOS or Linux.");
-    }
-    const root = path.parse(workspace).root;
-    io.process.chdir(root);
-    for (const component of workspace.slice(root.length).split(path.sep).filter(Boolean)) {
-        let before;
-        try {
-            before = await io.fs.lstat(component);
-        } catch (error) {
-            if (error.code !== "ENOENT") throw error;
-            try {
-                await io.fs.mkdir(component, { mode: 0o700 });
-            } catch (mkdirError) {
-                if (mkdirError.code !== "EEXIST") throw mkdirError;
-            }
-            before = await io.fs.lstat(component);
-        }
-        if (!before.isDirectory()) {
-            throw new Error("Workspace path must contain only directories, without symbolic links.");
-        }
-        // cwd holds the directory itself. Once selected, renaming its pathname
-        // cannot redirect later relative operations. Check a raced chdir before
-        // creating anything inside the selected directory.
-        const directory = await io.fs.open(component,
-            constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
-        try {
-            const opened = await directory.stat();
-            if (!sameDirectory(before, opened)) {
-                throw new Error("Workspace directory changed while opening it.");
-            }
-            io.process.chdir(component);
-            if (!sameDirectory(opened, await io.fs.lstat("."))) {
-                throw new Error("Workspace directory changed while opening it.");
-            }
-        } finally {
-            // Holding this descriptor until after chdir also prevents inode
-            // reuse from defeating the directory identity comparison.
-            await directory.close();
-        }
-    }
-
-    // A writable shared directory would let another account replace private
-    // staging entries. Refuse it instead of relying on pathname rechecks.
-    const directoryStats = await io.fs.lstat(".");
-    if (directoryStats.uid !== io.process.geteuid() || (directoryStats.mode & 0o022) !== 0) {
-        throw new Error("Workspace must be owned by the current user and not writable by group or others.");
-    }
+    await enterWorkspace(workspace, io, true);
 
     // Write privately, then atomically publish with link()'s no-replace semantics.
     // No existing destination is ever opened, including hard links/empty files.

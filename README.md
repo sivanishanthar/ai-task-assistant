@@ -213,6 +213,32 @@ malicious process running as the same OS user, which can access the agent's file
 and private staging directories. Other file tools retain their separate behavior
 and have not received this hardening.
 
+### Read Safety
+
+`readFile(fileName, workspace?)` still returns a UTF-8 string, including an empty
+string for an empty file, and retains the optional workspace argument. Missing
+workspaces are rejected without creating directories.
+
+Reads use the same verified directory traversal as writes, in an isolated child
+process. They require a physical workspace path without symlinks and a final
+directory owned by the current user that is not writable by group or others.
+This requires macOS or Linux; Windows fails closed.
+
+The reader rejects symlinks, nonregular files, and files with multiple hard links
+(including links entirely within the workspace, because their origin cannot be
+reliably determined). It opens the file with `O_NOFOLLOW | O_NONBLOCK`, verifies
+its device/inode identity, and reads only from that handle. Renaming the pathname
+after it is opened cannot redirect the read to a different file.
+
+The read buffer is capped at 100 KB plus one probe byte; files over 100 KB are
+rejected even if they grow after the initial size check. UTF-8 decoding happens
+after reading so multibyte characters survive short reads. File handles close on
+success and failure; primary read errors are preserved if closing also fails.
+Detected size or timestamp changes cause rejection, but reads are not immutable
+snapshots of files concurrently modified by another process. As with writes,
+this is not a security boundary against malicious processes running as the same
+OS user. Each read has child-process startup overhead.
+
 ### Test Isolation
 
 One improvement I made during development was separating the test environment from the application's actual workspace.

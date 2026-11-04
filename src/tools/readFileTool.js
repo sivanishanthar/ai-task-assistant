@@ -1,45 +1,44 @@
-
-import fs from "node:fs/promises";
+import childProcess from "node:child_process";
 import path from "node:path";
 
-// Read a text file from the workspace
-export async function readFile(
-    fileName,
-    workspace = path.resolve("workspace")
-) {
-
-    // Validate filename
-    if (
-        typeof fileName !== "string" ||
-        !/^[a-zA-Z0-9_-]+\.[a-zA-Z0-9]+$/.test(fileName)
-    ) {
+// Run directory-relative operations in a child so pinning its cwd cannot affect
+// the agent or other simultaneous calls. Return content over IPC, without logging it.
+export async function readFile(fileName, workspace = path.resolve("workspace")) {
+    if (typeof fileName !== "string" || !/^[a-zA-Z0-9_-]+\.[a-zA-Z0-9]+$/.test(fileName)) {
         throw new Error("Invalid file name.");
     }
-
-    // Construct file path
-    const filePath = path.join(workspace, fileName);
-
-    // Check file information
-    const stats = await fs.lstat(filePath);
-
-    // Only allow regular files
-    if (!stats.isFile()) {
-        throw new Error(
-            "The requested path is not a regular file."
-        );
+    const directory = path.resolve(workspace);
+    // Eval/stdin flags apply to the caller, not the worker module. Keep other
+    // flags, including any runtime permission restrictions.
+    const execArgv = [];
+    for (let i = 0; i < process.execArgv.length; i++) {
+        const argument = process.execArgv[i];
+        if (["--input-type", "--eval", "--print", "-e", "-p"].includes(argument)) {
+            i++;
+            continue;
+        }
+        if (!/^(--input-type=|--eval=|--print=|-e.|-p.)/.test(argument)) execArgv.push(argument);
     }
-
-    // Prevent reading excessively large files
-    const maxSize = 100 * 1024; // 100 KB
-
-    if (stats.size > maxSize) {
-        throw new Error(
-            "File exceeds the 100 KB reading limit."
-        );
-    }
-
-    // Read the file
-    const content = await fs.readFile(filePath, "utf8");
-
-    return content;
+    return await new Promise((resolve, reject) => {
+        const child = childProcess.fork(new URL("./readFileWorker.js", import.meta.url), [], {
+            execArgv,
+            stdio: ["ignore", "ignore", "ignore", "ipc"]
+        });
+        let response;
+        child.on("message", message => { response = message; });
+        child.once("error", reject);
+        child.once("exit", (code, signal) => {
+            if (code === 0 && response?.ok === true && typeof response.content === "string") return resolve(response.content);
+            const error = new Error(response?.message || `File reader exited unexpectedly (${signal || code}).`);
+            if (response?.code) error.code = response.code;
+            if (response?.cleanupErrors) error.cleanupErrors = response.cleanupErrors;
+            reject(error);
+        });
+        child.send({ fileName, workspace: directory }, error => {
+            if (error) {
+                child.kill();
+                reject(error);
+            }
+        });
+    });
 }
