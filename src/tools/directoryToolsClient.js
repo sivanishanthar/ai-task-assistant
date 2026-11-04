@@ -19,7 +19,7 @@ export function runDirectoryOperation(request) {
         child.on("message", message => { response = message; });
         child.once("error", reject);
         child.once("exit", (code, signal) => {
-            const validResult = request.action === "createFolder"
+            const validResult = ["createFolder", "createFile"].includes(request.action)
                 ? typeof response?.result === "string"
                 : Array.isArray(response?.result) && response.result.every(item =>
                     item && typeof item.name === "string" && ["file", "folder"].includes(item.type));

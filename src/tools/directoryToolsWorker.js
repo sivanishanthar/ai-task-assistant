@@ -4,14 +4,25 @@ import { fileURLToPath } from "node:url";
 import { enterWorkspace } from "./workspaceDirectory.js";
 
 // Internal entry point; production always runs in an isolated child process.
-export async function directoryInWorkspace({ action, workspace, folderName }, io = { fs, process }) {
-    if (!["createFolder", "listFiles"].includes(action)) throw new Error("Invalid directory operation.");
+export async function directoryInWorkspace({ action, workspace, folderName, fileName }, io = { fs, process }) {
+    if (!["createFolder", "listFiles", "createFile"].includes(action)) throw new Error("Invalid directory operation.");
     if (action === "createFolder" &&
         (typeof folderName !== "string" || !/^[a-zA-Z0-9_-]+$/.test(folderName))) {
         throw new Error("Invalid folder name.");
     }
-    // Preserve both tools' existing ability to create missing workspaces.
+    if (action === "createFile" &&
+        (typeof fileName !== "string" || !/^[a-zA-Z0-9_-]+\.[a-zA-Z0-9]+$/.test(fileName))) {
+        throw new Error("Invalid file name.");
+    }
+    // Preserve the tools' existing ability to create missing workspaces.
     await enterWorkspace(workspace, io, true);
+    if (action === "createFile") {
+        // Exclusive creation relative to pinned cwd cannot follow an existing
+        // destination symlink or overwrite any existing directory entry.
+        const handle = await io.fs.open(fileName, "wx", 0o600);
+        await handle.close();
+        return `File '${fileName}' created successfully.`;
+    }
     if (action === "createFolder") {
         try {
             // A single component, relative to pinned cwd. Never follow a final

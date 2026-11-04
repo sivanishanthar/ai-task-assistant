@@ -11,7 +11,7 @@ import { createFile } from "../src/tools/createFileTool.js";
 test("TC005 - Create a file with a valid name", async () => {
 
     const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-file-test-")
+        path.join(await fs.realpath(os.tmpdir()), "ai-agent-file-test-")
     );
 
     try {
@@ -39,7 +39,7 @@ test("TC005 - Create a file with a valid name", async () => {
 test("TC006 - Reject invalid file names", async () => {
 
     const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-file-test-")
+        path.join(await fs.realpath(os.tmpdir()), "ai-agent-file-test-")
     );
 
     try {
@@ -60,7 +60,7 @@ test("TC006 - Reject invalid file names", async () => {
 test("TC007 - Reject duplicate file creation", async () => {
 
     const testWorkspace = await fs.mkdtemp(
-        path.join(os.tmpdir(), "ai-agent-file-test-")
+        path.join(await fs.realpath(os.tmpdir()), "ai-agent-file-test-")
     );
 
     try {

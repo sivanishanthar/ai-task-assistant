@@ -210,8 +210,8 @@ links. Windows and filesystems that cannot perform the required operations fail
 closed. The child process adds startup overhead per write and requires Node child
 process execution to be permitted. This is not an isolation boundary against a
 malicious process running as the same OS user, which can access the agent's files
-and private staging directories. `createFileTool.js` remains a separate
-implementation and has not received this hardening.
+and private staging directories. All five filesystem tools now use
+the shared pinned-workspace boundary.
 
 ### Read Safety
 
@@ -264,6 +264,28 @@ the same name is safe. Each later operation must apply its own checks.
 Renaming or replacing the workspace pathname after selection cannot redirect
 these operations to the replacement. The same limitation against malicious
 processes running as the current OS user still applies.
+
+### Empty File Creation Safety
+
+`createFile(fileName, workspace?)` retains its arguments, success message, and
+`EEXIST` behavior for duplicate destinations. It now uses the shared isolated
+worker and verified workspace traversal. It requires the same physical workspace
+path, current-user ownership, and permissions as the other hardened tools; only
+macOS and Linux are supported. Missing workspace components are created with mode
+`0700` (subject to umask).
+
+The empty file is created relative to the pinned directory using `wx` and mode
+`0600` (subject to umask), then its handle is closed. Existing files, hard links,
+directories, and symbolic links (including dangling ones) cause rejection without
+following or overwriting them. Replacing the workspace pathname cannot redirect
+creation to the replacement. A close failure is reported; the newly created
+empty file can remain, so a later retry may return `EEXIST`. No destination is
+removed on error because another caller could have replaced it.
+
+Like the other tools, this has child-process startup overhead and does not
+isolate against malicious processes running as the same OS user. Files created
+by `create_file` remain empty: use `write_file` directly when creating a file
+with content, since it rejects existing empty files too.
 
 ### Test Isolation
 
