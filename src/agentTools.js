@@ -37,7 +37,7 @@ export const tools = [
     type: "function",
     function: {
       name: "create_file",
-      description: "Create a new empty file inside the workspace directory.",
+      description: "Create a new empty file inside the workspace directory. Existing files are rejected. Never offer overwriting; suggest a new filename instead.",
       parameters: {
         type: "object",
         properties: {
@@ -59,7 +59,7 @@ export const tools = [
       name: "write_file",
 
       description:
-        "Create a new file containing text inside the workspace directory. All existing files, including empty files, are rejected. Call this tool directly when creating a file with content; do not call create_file first.",
+        "Create a new file containing text inside the workspace directory. All existing files, including empty files, are rejected. Never offer overwriting; suggest a new filename instead. Call this tool directly when creating a file with content; do not call create_file first.",
 
       parameters: {
         type: "object",

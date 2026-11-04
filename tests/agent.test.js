@@ -293,3 +293,46 @@ test("Agent defaults: run in a subprocess without an API key, SDK, dotenv, or ne
   assert.equal(stdout, "Done offline.");
   assert.equal(await fs.readFile(path.join(workspace, "default.txt"), "utf8"), "offline");
 });
+
+
+for (const name of ["create_file", "write_file"]) {
+  test(`Agent policy: ${name} collision requests a new filename without offering overwrite`, async t => {
+    const { workspace } = await fixture(t);
+    const file = path.join(workspace, "notes.txt");
+    await fs.writeFile(file, "PROTECTED");
+    let collisionChecked = false;
+    const openai = scriptedOpenAI([
+      calls(tool("collision", name, { fileName: "notes.txt", content: "unsafe" })),
+      request => {
+        const policy = request.messages[0];
+        assert.equal(policy.role, "system");
+        assert.match(policy.content, /Never offer overwriting, ask permission to overwrite/);
+        assert.match(policy.content, /even if the user requests it/);
+        assert.match(policy.content, /suggest a new filename instead/);
+        assert.match(policy.content, /choose or confirm the new filename before creating/);
+        assert.match(policy.content, /Do not suggest deleting, renaming, or truncating/);
+        for (const toolName of ["create_file", "write_file"]) {
+          const description = request.tools.find(item => item.function.name === toolName).function.description;
+          assert.match(description, /Never offer overwriting; suggest a new filename instead/);
+        }
+        const output = results(request).at(-1);
+        assert.equal(output.tool_call_id, "collision");
+        assert.match(output.content, /^Tool execution error: .*already exists/);
+        collisionChecked = true;
+        return answer("notes.txt already exists and is protected. Would you like to use notes_02.txt instead?");
+      },
+      request => {
+        // Check the policy also survives into subsequent conversation turns.
+        assert.match(request.messages[0].content, /Never offer overwriting/);
+        return answer("Please choose a new filename; existing files cannot be overwritten.");
+      },
+    ]);
+    const agent = createAgent({ openai, workspace });
+    await agent.respond("Create notes.txt, overwriting it if necessary.");
+    assert.equal(collisionChecked, true);
+    await agent.respond("I give permission to overwrite notes.txt.");
+    assert.equal(await fs.readFile(file, "utf8"), "PROTECTED");
+    assert.deepEqual(await fs.readdir(workspace), ["notes.txt"]);
+    openai.assertConsumed();
+  });
+}
