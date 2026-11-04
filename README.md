@@ -287,6 +287,36 @@ isolate against malicious processes running as the same OS user. Files created
 by `create_file` remain empty: use `write_file` directly when creating a file
 with content, since it rejects existing empty files too.
 
+### Offline Agent Workflow Tests
+
+The terminal application uses `createAgent` from `src/agentCore.js`. That module
+accepts an OpenAI-compatible client and an optional test workspace, and does not
+import the SDK, load `.env`, create a terminal interface, or require an API key.
+`src/agent.js` remains the real CLI and still requires `OPENAI_API_KEY` for live
+requests. Tool definitions are shared through `src/agentTools.js`.
+
+Run the mocked workflow tests alone:
+
+```bash
+npm run test:agent
+```
+
+The tests script `chat.completions.create` responses while executing the real
+filesystem tools in isolated temporary workspaces. They cover folder creation,
+writing directly to a new file, listing and reading, overwrite rejection, empty
+file protection, invalid paths, workspace isolation, conversation memory,
+malformed arguments, unknown tools, API failures, and the five-round tool limit.
+They also verify that every tool result is matched to the correct call ID and
+that subsequent requests contain valid message history. Network fetch calls are
+blocked in these tests; an additional subprocess test runs with an empty API key.
+No live OpenAI client is constructed and there is no fallback to a real service.
+
+`npm test` and the existing full coverage command include these tests. GitHub
+Actions runs the full suite with `OPENAI_API_KEY` explicitly empty; no repository
+secret or OpenAI API spend is needed. Normal dependency installation still uses
+the npm registry. These tests verify application orchestration and tool behavior;
+scripted model responses do not prove a live model will choose the right tools.
+
 ### Test Isolation
 
 One improvement I made during development was separating the test environment from the application's actual workspace.

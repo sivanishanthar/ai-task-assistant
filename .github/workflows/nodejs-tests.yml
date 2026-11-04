@@ -27,5 +27,7 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Run Tests with Coverage
+      - name: Run Offline Tests with Coverage (Mocked OpenAI)
+        env:
+          OPENAI_API_KEY: ""
         run: node --test --experimental-test-coverage tests/*.test.js
