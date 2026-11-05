@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import path from "node:path";
 import dotenv from "dotenv";
 import readline from "node:readline/promises";
 import { createAgent } from "./agentCore.js";
@@ -6,13 +7,15 @@ import { createLogger } from "./logger.js";
 import { timeoutConfigFromEnv } from "./timeouts.js";
 import { historyConfigFromEnv } from "./history.js";
 import { formatHelp } from "./help.js";
+import { getStatus, formatStatus } from "./status.js";
 
 const logger = createLogger();
 
 async function startAgent() {
   dotenv.config();
   const helpRequested = process.argv.slice(2).some(argument => argument === "--help" || argument === "-h");
-  if (!helpRequested && !process.env.OPENAI_API_KEY) {
+  const statusRequested = process.argv.slice(2).includes("--status");
+  if (!helpRequested && !statusRequested && !process.env.OPENAI_API_KEY) {
     logger.agentFailure("startup");
     console.log("Error: OPENAI_API_KEY is missing.");
     process.exitCode = 1;
@@ -36,20 +39,27 @@ async function startAgent() {
     process.exitCode = 1;
     return;
   }
+  const workspace = path.resolve("workspace");
   const help = formatHelp({ ...timeouts, ...historyLimits });
+  const status = async () => formatStatus(await getStatus({ workspace, ...timeouts, ...historyLimits,
+    apiKeyConfigured: Boolean(process.env.OPENAI_API_KEY) }));
   if (helpRequested) {
     console.log(help);
+    return;
+  }
+  if (statusRequested) {
+    console.log(await status());
     return;
   }
   // Construction is inside the guarded startup path too: never print raw SDK
   // or terminal errors, which can include private input or configuration.
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const agent = createAgent({ openai, logger, ...timeouts, ...historyLimits });
+  const agent = createAgent({ openai, logger, workspace, ...timeouts, ...historyLimits });
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   console.log("\n******************************************");
   console.log("       Welcome to AI Task Assistant!");
   console.log("******************************************");
-  console.log("Type 'help' for tools and limits, or 'exit' to quit.\n");
+  console.log("Type 'help' for tools and limits, 'status' for setup checks, or 'exit' to quit.\n");
   try {
     while (true) {
       const userInput = await rl.question("You: ");
@@ -61,6 +71,10 @@ async function startAgent() {
       if (!command) continue;
       if (command === "help") {
         console.log(help);
+        continue;
+      }
+      if (command === "status") {
+        console.log(await status());
         continue;
       }
       try {

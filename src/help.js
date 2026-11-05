@@ -14,8 +14,9 @@ export function formatHelp({
 
 Local commands:
   help   Show this help locally; no API call, tool execution, or history entry.
+  status Show workspace, key-presence, timeout, and history checks locally; no API call.
   exit   Quit the agent.
-  You can also run npm start -- --help (or -h) without an API key.
+  You can also run npm start -- --help (or -h), or npm start -- --status, without an API key.
 
 The five tools:
   create_folder  Create a folder; an existing genuine directory is accepted.

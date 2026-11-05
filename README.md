@@ -514,6 +514,43 @@ Offline tests exercise the real CLI with fake SDK/terminal modules. They verify
 zero API calls for local help, no client construction for `--help`/`-h`, unchanged
 conversation history across help, whitespace/case handling, and custom limits.
 
+### Local Status Command
+
+Type `status` in a running session, or run this offline without an API key:
+
+```bash
+npm start -- --status
+```
+
+Status displays the exact resolved workspace used by the CLI and whether its
+entry exists, is a directory, or is blocked by an observed symlink/non-directory
+ancestor. It checks current-user ownership and the same prohibition on group or
+other write bits used by the filesystem workers. It also warns when owner
+read/write/execute bits are incomplete. Checks are refreshed on every invocation.
+
+It reports **only key presence**, as `configured (value hidden; not validated)`
+or `not configured`; it does not print, hash, partially reveal, or remotely
+validate the key. The active OpenAI/worker timeout and history limits are shown
+from the same validated configuration used by the agent. Invalid configuration
+returns a safe local error. `--status` returns before constructing an OpenAI
+client or terminal interface; `--help` takes precedence if both flags are given.
+
+Inspection reads metadata only. It never creates a missing workspace, changes
+permissions, follows an observed symlink to inspect its target, lists workspace
+contents, or runs file tools. Missing, unsafe, inaccessible, and unsupported
+workspaces are reported explicitly instead of receiving a false ready status.
+Owner access-bit checks are advisory; ACLs and concurrent path changes can affect
+actual access. This is a diagnostic snapshot, not a pinned authorization check;
+the tools still perform their own checks when executing.
+
+The path is intentionally displayed on stdout because the user requested setup
+information. It is not written to structured diagnostic logs or sent to the
+model. Exact `status` commands are case-insensitive, trim surrounding whitespace,
+and do not enter conversation history or consume tool budget. Natural-language
+requests such as `status of my files` still go to the model. A normal interactive
+session retains its API-key requirement; use `--status` to diagnose missing-key
+setup offline. No API key or network access is needed for the status tests.
+
 ### Test Isolation
 
 One improvement I made during development was separating the test environment from the application's actual workspace.
