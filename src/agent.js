@@ -4,6 +4,7 @@ import readline from "node:readline/promises";
 import { createAgent } from "./agentCore.js";
 import { createLogger } from "./logger.js";
 import { timeoutConfigFromEnv } from "./timeouts.js";
+import { historyConfigFromEnv } from "./history.js";
 
 const logger = createLogger();
 
@@ -24,10 +25,19 @@ async function startAgent() {
     process.exitCode = 1;
     return;
   }
+  let historyLimits;
+  try {
+    historyLimits = historyConfigFromEnv();
+  } catch {
+    logger.agentFailure("startup");
+    console.log("Error: MAX_HISTORY_TURNS and MAX_HISTORY_BYTES must be positive safe integers.");
+    process.exitCode = 1;
+    return;
+  }
   // Construction is inside the guarded startup path too: never print raw SDK
   // or terminal errors, which can include private input or configuration.
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-  const agent = createAgent({ openai, logger, ...timeouts });
+  const agent = createAgent({ openai, logger, ...timeouts, ...historyLimits });
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   console.log("\n******************************************");
   console.log("       Welcome to AI Task Assistant!");
@@ -47,6 +57,8 @@ async function startAgent() {
         logger.agentFailure("request");
         if (error.code === "OPENAI_TIMEOUT") {
           console.log("\nAgent: OpenAI request timed out. Please try again. Previously completed tools are not rolled back.\n");
+        } else if (error.code === "HISTORY_LIMIT") {
+          console.log("\nAgent: Conversation history exceeds the configured limit. Use a shorter request or smaller file. Previously completed tools are not rolled back.\n");
         } else {
           console.log("\nAgent: The request failed. Please try again.\n");
         }

@@ -404,6 +404,48 @@ Offline tests trigger deadlines with a controlled clock, verify abort signals an
 late-result handling, terminate an actual stalled Node worker after its startup
 acknowledgment, and verify recovery/history without live OpenAI calls or sleeps.
 
+### Bounded Conversation History
+
+The defaults retain at most **20 turns** and **256 KiB (262144 bytes)** of
+serialized message history. A turn starts at a user message and includes all its
+assistant tool calls, matching tool results, and final assistant response. The
+turn cap includes the active turn when making an API request. Configure the CLI
+through `.env` or environment variables:
+
+```env
+MAX_HISTORY_TURNS=20
+MAX_HISTORY_BYTES=262144
+```
+
+Programmatic callers can pass `maxHistoryTurns` and `maxHistoryBytes` to
+`createAgent`. Both must be positive safe integers; zero does not disable limits.
+The byte budget measures UTF-8 bytes of the serialized `messages` array,
+including system instructions, call arguments, IDs, and results. It is **not a
+token limit** and does not include the separate tool schemas or request metadata.
+
+Before every completion request, the agent evicts the oldest completed turns
+until both limits fit. It never removes system instructions, splits a turn,
+or separates tool calls from results. The current active turn is protected.
+Incoming tool requests that cannot fit are rejected before their tools execute.
+If the active input or tool results still exceed the budget after removing older
+turns, `HISTORY_LIMIT` is returned instead of sending an oversized API request.
+The CLI explains the limit and resets history for recovery. Completed filesystem
+changes remain; history eviction never deletes files or rolls back tools.
+
+After a final answer or limit/timeout notice, retention is checked again. A final
+answer too large to retain is returned normally, but its entire completed turn
+is evicted if necessary. Older context may therefore be forgotten, including a
+large most-recent response. No text is silently truncated or summarized, and
+trimming makes no additional API calls. Tool results can temporarily occupy the
+active working history while a batch runs, but are checked before the next API
+request and are not retained beyond the completed-turn budget. A byte budget too
+small even for system instructions causes requests to fail; increase it rather
+than removing the instructions.
+
+Offline regression tests verify whole-turn eviction, active multi-round tool
+integrity, exact UTF-8 boundaries, oversized tool input/output, large final
+responses, API-error recovery, and trimming of complete limit/timeout turns.
+
 ### Structured Diagnostic Logging
 
 The CLI emits one JSON line to **stderr** for every executed tool call:

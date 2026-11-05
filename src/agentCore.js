@@ -1,4 +1,5 @@
 import path from "node:path";
+import { DEFAULT_MAX_HISTORY_TURNS, DEFAULT_MAX_HISTORY_BYTES, validateHistoryLimits, trimHistory } from "./history.js";
 import { performance } from "node:perf_hooks";
 import { DEFAULT_API_TIMEOUT_MS, DEFAULT_WORKER_TIMEOUT_MS, validateTimeout, withApiTimeout, WORKER_TIMEOUT_NOTICE } from "./timeouts.js";
 import { tools } from "./agentTools.js";
@@ -36,17 +37,33 @@ export function createAgent({
   maxToolCallsPerRound = 5,
   apiTimeoutMs = DEFAULT_API_TIMEOUT_MS,
   workerTimeoutMs = DEFAULT_WORKER_TIMEOUT_MS,
+  maxHistoryTurns = DEFAULT_MAX_HISTORY_TURNS,
+  maxHistoryBytes = DEFAULT_MAX_HISTORY_BYTES,
 }) {
   for (const [name, value] of Object.entries({ maxToolCallsPerRequest, maxToolCallsPerRound })) {
     if (!Number.isSafeInteger(value) || value < 1) {
       throw new RangeError(`${name} must be a positive safe integer.`);
     }
   }
+  const historyLimits = { maxHistoryTurns, maxHistoryBytes };
+  validateHistoryLimits(historyLimits);
   validateTimeout("apiTimeoutMs", apiTimeoutMs);
   validateTimeout("workerTimeoutMs", workerTimeoutMs);
   const workerOptions = { timeoutMs: workerTimeoutMs };
   const directory = path.resolve(workspace);
   const messages = [{ ...SYSTEM_MESSAGE }];
+  let activeTurnStart = null;
+
+  function trimActiveHistory() {
+    activeTurnStart = trimHistory(messages, historyLimits, activeTurnStart);
+  }
+
+  function finishTurn(content) {
+    messages.push({ role: "assistant", content });
+    activeTurnStart = null;
+    trimHistory(messages, historyLimits);
+    return content;
+  }
   const toolNames = new Set(tools.map(tool => tool.function.name));
 
   async function executeTool(toolCall) {
@@ -70,6 +87,7 @@ export function createAgent({
   }
 
   async function complete() {
+    trimActiveHistory();
     const response = await withApiTimeout(signal => openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: structuredClone(messages),
@@ -81,6 +99,7 @@ export function createAgent({
 
   return {
     async respond(userInput) {
+      activeTurnStart = messages.length;
       messages.push({ role: "user", content: userInput });
       try {
         let assistantMessage = await complete();
@@ -99,11 +118,11 @@ export function createAgent({
           if (limitMessage) {
             // Reject the whole batch before saving its assistant message or
             // executing any of its calls. No unmatched tool IDs enter history.
-            messages.push({ role: "assistant", content: limitMessage });
-            return limitMessage;
+            return finishTurn(limitMessage);
           }
           toolRounds++;
           messages.push(assistantMessage);
+          trimActiveHistory();
           for (const [index, toolCall] of assistantMessage.tool_calls.entries()) {
             // Failures, malformed arguments, and unknown tools also spend budget.
             toolCallsUsed++;
@@ -130,17 +149,16 @@ export function createAgent({
                 messages.push({ role: "tool", tool_call_id: skipped.id,
                   content: "Tool execution skipped: a preceding filesystem worker timed out. This call was not executed." });
               }
-              messages.push({ role: "assistant", content: WORKER_TIMEOUT_NOTICE });
-              return WORKER_TIMEOUT_NOTICE;
+              return finishTurn(WORKER_TIMEOUT_NOTICE);
             }
           }
           assistantMessage = await complete();
         }
         const content = assistantMessage.content ?? "No response received.";
-        messages.push({ role: "assistant", content });
-        return content;
+        return finishTurn(content);
       } catch (error) {
         messages.splice(1);
+        activeTurnStart = null;
         throw error;
       }
     },
