@@ -2,11 +2,37 @@
 
 [![Automated Tests](https://github.com/sivanishanthar/ai-task-assistant/actions/workflows/nodejs-tests.yml/badge.svg)](https://github.com/sivanishanthar/ai-task-assistant/actions/workflows/nodejs-tests.yml)
 
-A simple AI-powered task assistant built with **Node.js, JavaScript, and the OpenAI API**.
+A terminal-based AI task assistant built with **Node.js, JavaScript, and the OpenAI API**.
+
+**v1.0.0** is the first source release. See the [changelog](CHANGELOG.md) for release notes.
+
+[Requirements](#supported-platforms-and-requirements) · [Setup](#getting-started) · [Examples](#example-requests) · [Known limitations](#known-limitations) · [Tests](#automated-testing)
 
 I started this project to get hands-on experience building AI agents and understanding how they can interact with real tools. Instead of just answering questions, this assistant can carry out basic file and folder operations based on instructions entered in natural language.
 
 The project also gave me an opportunity to apply my experience in QA automation by building automated tests, measuring code coverage, and setting up a CI/CD pipeline using GitHub Actions.
+
+## Supported Platforms and Requirements
+
+- **macOS or Linux. Native Windows is not supported** by the filesystem workers.
+- **Node.js 22 or 24** and npm. GitHub Actions validates Node.js 22 on Ubuntu
+  24.04; local validation uses Node.js 24 on macOS. Other runtime/platform
+  combinations have not been validated for this release.
+- Child-process execution must be permitted. Full tool support requires a local
+  filesystem supporting POSIX ownership/permissions and hard links.
+- Use a physical workspace path without symlink components. On macOS, for
+  example, use `/private/tmp` rather than `/tmp` for custom temporary workspaces.
+  The workspace must belong to the effective OS user and must not be writable
+  by group or others. Newly created directories use `0700`, files `0600`, subject
+  to the process umask.
+- Live natural-language requests require network access and your own OpenAI API
+  key, and incur normal API usage charges. Offline tests, `--help`, and `--status`
+  need no API key and make no OpenAI API calls. Installing dependencies with
+  `npm ci` still uses the npm registry.
+
+The CLI uses `workspace/` relative to its working directory. No startup operation
+silently repairs permissions or removes existing workspace content; use
+`npm start -- --status` to inspect setup before running tools.
 
 ## What Can It Do?
 
@@ -18,7 +44,7 @@ The assistant currently supports five operations:
 - **Write to files** — Create a new file containing text. All existing files, including empty files, are protected.
 - **Read files** — Read the contents of a text file, with a 100 KB size limit.
 
-The assistant also remembers the conversation while it's running, so users can continue interacting with it without starting a new session for every request.
+Conversation context is retained only in memory, bounded by the configured turn and byte limits. The local `reset` command clears it while preserving system instructions and workspace files.
 
 ## How It Works
 
@@ -72,29 +98,24 @@ For example, if I ask the assistant to create a file called `notes.txt`, it can 
 
 ```text
 ai-task-assistant/
-│
-├── .github/
-│   └── workflows/
-│       └── nodejs-tests.yml
-│
+├── .github/workflows/nodejs-tests.yml
 ├── src/
-│   ├── agent.js
-│   └── tools/
-│       ├── folderTool.js
-│       ├── createFileTool.js
-│       ├── listFilesTool.js
-│       ├── writeFileTool.js
-│       └── readFileTool.js
-│
+│   ├── agent.js                 # CLI and local commands
+│   ├── agentCore.js             # Testable model/tool orchestration
+│   ├── agentTools.js            # Model-facing tool definitions
+│   ├── help.js
+│   ├── status.js
+│   ├── history.js
+│   ├── logger.js
+│   ├── timeouts.js
+│   ├── toolLimits.js
+│   └── tools/                  # Five tools, isolated workers, shared transport
 ├── tests/
-│   ├── folderTool.test.js
-│   ├── createFileTool.test.js
-│   ├── listFileTool.test.js
-│   ├── writeFileTool.test.js
-│   └── readFileTool.test.js
-│
+│   ├── *.test.js               # Tool, security, workflow, CLI, and recovery tests
+│   └── helpers/                # Offline SDK/terminal and stalled-worker doubles
 ├── .env.example
 ├── .gitignore
+├── CHANGELOG.md
 ├── package.json
 ├── package-lock.json
 └── README.md
@@ -104,7 +125,7 @@ Files and folders created by the assistant are stored in a local `workspace/` di
 
 ## Getting Started
 
-You'll need Node.js, npm, and an OpenAI API key to run the assistant. I use Node.js 22 for the automated CI tests.
+Install the macOS/Linux and Node.js prerequisites above. An API key is required only for the live interactive session; you can inspect help/status and run the tests first without one.
 
 ### 1. Clone the Repository
 
@@ -118,6 +139,16 @@ cd ai-task-assistant
 ```bash
 npm ci
 ```
+
+Check the offline commands before configuring credentials:
+
+```bash
+npm start -- --help
+npm start -- --status
+```
+
+A missing workspace in the status output is normal on a fresh checkout. Status
+never creates it. Create/write/list operations can create it when used.
 
 ### 3. Set Up Your API Key
 
@@ -143,7 +174,7 @@ npm start
 
 Once the assistant starts, you can enter requests directly in the terminal.
 
-Type `exit` when you're finished.
+Local commands are `help` (tools and active limits), `status` (read-only setup checks), `reset` (clear model context), and `exit`. They are case-insensitive exact commands; they do not make a model request. A normal interactive session still requires a key. Use `--help` or `--status` outside the session to work without one.
 
 ## Example Requests
 
@@ -152,22 +183,80 @@ Here are a few things you can ask the assistant to do:
 ```text
 Create a folder called Reports
 
-Create a file called notes.txt
-
-Write "My first AI agent project" into notes.txt
-
-Read notes.txt
+Create notes_release_01.txt containing My first AI agent project
 
 Show me all the files and folders in the workspace
+
+Read notes_release_01.txt
+
+Create an empty file called empty_release_01.txt
 ```
 
+**Choose a fresh filename if an example name already exists.** `write_file`
+creates a new file with content directly. Do not create an empty file first:
+all existing files, including empty ones, are protected from later writes.
+There is no overwrite, delete, rename, or edit tool.
+
+Folder names use nonempty ASCII letters, digits, underscores, and hyphens.
+Filenames use the same basename characters, exactly one dot, and an alphanumeric
+extension, such as `notes_02.txt`. Spaces, subpaths, and traversal are rejected.
+The tools operate at the workspace root; creating a subfolder does not enable
+nested file paths. An extension alone does not produce a formatted Word/PDF file.
+
 The assistant uses the available tools to complete these tasks.
+
+## Known Limitations
+
+- **Create-only text workflow:** existing files cannot be edited or overwritten,
+  even when empty. The tools are not Word/PDF generators and do not support
+  nested file paths or arbitrary Unicode/spaced filenames.
+- **Filesystem boundary:** symlink components are rejected, reads reject every
+  file with multiple hard links (including links wholly inside the workspace),
+  and listings omit symlinks and special entries. Workers add startup overhead
+  per operation. They are not an OS sandbox against malicious processes running
+  as the same user; permissions, ACLs, and concurrent changes still matter.
+- **Snapshots and durability:** directory listings and status are snapshots, and
+  reads are not immutable snapshots during concurrent writes. Atomic publication
+  of writes does not guarantee crash durability. This learning project has not
+  received an independent security audit; test coverage is not proof of safety.
+- **Timeouts are not rollback:** a killed worker may already have created a file
+  or folder or published a write. Private `.ai-write-*` staging directories can
+  remain after abrupt termination. Inspect the workspace before retrying; no
+  automatic deletion or retry is attempted after a worker timeout.
+- **Bounded, nonpersistent memory:** older completed turns are forgotten as a
+  whole, while system instructions are retained. Oversized active turns fail
+  instead of being sent. Large final answers may be returned but not retained.
+  `reset` does not erase earlier provider records, terminal scrollback, or logs.
+- **Not a token or spending cap:** byte limits cover serialized message history,
+  not tokens, tool schemas, or the entire request. Timeouts apply per completion
+  or worker, not to the full turn. Live model choices remain nondeterministic;
+  mocked tests verify application behavior, not live model decision quality.
+- **Output privacy:** structured stderr logs exclude keys, prompts, paths,
+  filenames, file contents, arguments, results, and raw errors. Ordinary stdout
+  responses may contain requested content, and status intentionally displays the
+  workspace path. A complete terminal transcript is not a redacted log.
+
+### Default Limits
+
+| Setting | v1.0.0 default |
+| --- | --- |
+| Calls per round / user request | 5 / 10; oversized batches rejected in full |
+| Tool-calling rounds | 5; failed attempts still spend call budget |
+| Text read size | 102400 bytes (100 KiB) |
+| OpenAI completion timeout | 30000 ms; automatic SDK retries disabled |
+| Filesystem worker timeout | 10000 ms; timeout requests `SIGKILL` |
+| History | 20 turns, including active turn; 262144 serialized UTF-8 bytes |
+
+Set `API_TIMEOUT_MS`, `WORKER_TIMEOUT_MS`, `MAX_HISTORY_TURNS`, and
+`MAX_HISTORY_BYTES` in `.env`; restart to apply them. Tool-call caps are also
+configurable through `createAgent` options. Use local `help` for the current
+limits. Detailed behavior and recovery notes follow below.
 
 ## Automated Testing
 
 Since my background is in QA automation, I wanted automated testing to be part of the project from the beginning rather than something added at the end.
 
-I used the built-in Node.js Test Runner to test each of the five tools.
+The built-in Node.js Test Runner covers the five tools plus the agent workflow, CLI commands, privacy, resource limits, and recovery. The v1.0.0 baseline is **251 passing offline tests**. SDK/terminal doubles prevent live OpenAI calls; no API secrets are needed in CI.
 
 The test cases cover both successful operations and error scenarios, including invalid filenames, duplicate file creation, attempts to overwrite existing content, missing files, and file-size restrictions.
 
@@ -633,7 +722,7 @@ There are a few areas I'd like to explore as I continue improving the project:
 - Improve filesystem safety and error handling.
 - Add additional tools to make the assistant more useful.
 - Extend diagnostic logging with optional local analysis tools.
-- Add automated tests for the agent's tool-calling logic.
+- Expand offline scenarios and CI platform coverage.
 - Explore storing conversation history between sessions.
 
 For now, the focus is on keeping the assistant simple, reliable, and easy to extend.
