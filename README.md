@@ -484,6 +484,36 @@ values, so custom hook implementations must apply their own privacy policy.
 Offline tests exercise metadata redaction, outcome classification, sink failures,
 and the actual CLI with fake SDK/terminal modules, including raw-error redaction.
 
+### Local Help Command
+
+In a running session, type `help` to see the five tools, folder/file name rules,
+create-only file behavior, workspace requirements, and configured tool, read,
+timeout, and history limits. The command is case-insensitive and ignores leading
+or trailing whitespace. It is handled locally before model dispatch: no OpenAI
+request, filesystem tool, tool-execution log, conversation-history entry, or tool
+budget is used. Normal requests such as `help me write notes` still go to the
+model.
+
+For help without an API key or starting a model session:
+
+```bash
+npm start -- --help
+# Short alias:
+npm start -- -h
+```
+
+These flags return before constructing the OpenAI client or terminal interface.
+Help reads the same validated startup settings as the CLI and shows active
+`API_TIMEOUT_MS`, `WORKER_TIMEOUT_MS`, `MAX_HISTORY_TURNS`, and
+`MAX_HISTORY_BYTES` values. Invalid settings produce a local configuration error.
+Restart after changing `.env`. No API key value, workspace path, or other private
+configuration is included in the help text. Execution and help share constants
+for tool caps, maximum rounds, and the file-read byte limit.
+
+Offline tests exercise the real CLI with fake SDK/terminal modules. They verify
+zero API calls for local help, no client construction for `--help`/`-h`, unchanged
+conversation history across help, whitespace/case handling, and custom limits.
+
 ### Test Isolation
 
 One improvement I made during development was separating the test environment from the application's actual workspace.

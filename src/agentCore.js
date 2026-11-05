@@ -1,4 +1,5 @@
 import path from "node:path";
+import { DEFAULT_MAX_TOOL_CALLS_PER_REQUEST, DEFAULT_MAX_TOOL_CALLS_PER_ROUND, MAX_TOOL_ROUNDS } from "./toolLimits.js";
 import { DEFAULT_MAX_HISTORY_TURNS, DEFAULT_MAX_HISTORY_BYTES, validateHistoryLimits, trimHistory } from "./history.js";
 import { performance } from "node:perf_hooks";
 import { DEFAULT_API_TIMEOUT_MS, DEFAULT_WORKER_TIMEOUT_MS, validateTimeout, withApiTimeout, WORKER_TIMEOUT_NOTICE } from "./timeouts.js";
@@ -33,8 +34,8 @@ export function createAgent({
   onToolCall = () => {},
   onToolResult = () => {},
   logger,
-  maxToolCallsPerRequest = 10,
-  maxToolCallsPerRound = 5,
+  maxToolCallsPerRequest = DEFAULT_MAX_TOOL_CALLS_PER_REQUEST,
+  maxToolCallsPerRound = DEFAULT_MAX_TOOL_CALLS_PER_ROUND,
   apiTimeoutMs = DEFAULT_API_TIMEOUT_MS,
   workerTimeoutMs = DEFAULT_WORKER_TIMEOUT_MS,
   maxHistoryTurns = DEFAULT_MAX_HISTORY_TURNS,
@@ -108,7 +109,7 @@ export function createAgent({
         while (assistantMessage.tool_calls?.length) {
           const requestedCalls = assistantMessage.tool_calls.length;
           let limitMessage;
-          if (toolRounds >= 5) {
+          if (toolRounds >= MAX_TOOL_ROUNDS) {
             limitMessage = "Tool execution limit reached. Please try a simpler request.";
           } else if (requestedCalls > maxToolCallsPerRound) {
             limitMessage = `Too many tool calls in one round (maximum ${maxToolCallsPerRound}). Please try a simpler request.`;

@@ -3,8 +3,7 @@ import path from "node:path";
 import { constants } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { enterWorkspace } from "./workspaceDirectory.js";
-
-const LIMIT = 100 * 1024;
+import { MAX_READ_BYTES as LIMIT } from "../toolLimits.js";
 const limitError = () => new Error("File exceeds the 100 KB reading limit.");
 
 function checkFile(stats) {

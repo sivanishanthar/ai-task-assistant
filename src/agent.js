@@ -5,12 +5,14 @@ import { createAgent } from "./agentCore.js";
 import { createLogger } from "./logger.js";
 import { timeoutConfigFromEnv } from "./timeouts.js";
 import { historyConfigFromEnv } from "./history.js";
+import { formatHelp } from "./help.js";
 
 const logger = createLogger();
 
 async function startAgent() {
   dotenv.config();
-  if (!process.env.OPENAI_API_KEY) {
+  const helpRequested = process.argv.slice(2).some(argument => argument === "--help" || argument === "-h");
+  if (!helpRequested && !process.env.OPENAI_API_KEY) {
     logger.agentFailure("startup");
     console.log("Error: OPENAI_API_KEY is missing.");
     process.exitCode = 1;
@@ -34,6 +36,11 @@ async function startAgent() {
     process.exitCode = 1;
     return;
   }
+  const help = formatHelp({ ...timeouts, ...historyLimits });
+  if (helpRequested) {
+    console.log(help);
+    return;
+  }
   // Construction is inside the guarded startup path too: never print raw SDK
   // or terminal errors, which can include private input or configuration.
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -42,15 +49,20 @@ async function startAgent() {
   console.log("\n******************************************");
   console.log("       Welcome to AI Task Assistant!");
   console.log("******************************************");
-  console.log("Type 'exit' to quit.\n");
+  console.log("Type 'help' for tools and limits, or 'exit' to quit.\n");
   try {
     while (true) {
       const userInput = await rl.question("You: ");
-      if (userInput.trim().toLowerCase() === "exit") {
+      const command = userInput.trim().toLowerCase();
+      if (command === "exit") {
         console.log("\nAgent: Goodbye!");
         break;
       }
-      if (!userInput.trim()) continue;
+      if (!command) continue;
+      if (command === "help") {
+        console.log(help);
+        continue;
+      }
       try {
         console.log("\nAgent:", await agent.respond(userInput), "\n");
       } catch (error) {
