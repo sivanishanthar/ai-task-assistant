@@ -99,6 +99,12 @@ export function createAgent({
   }
 
   return {
+    reset() {
+      // Reset is local and only permitted between turns. It neither cancels a
+      // running operation nor touches workspace files or agent configuration.
+      if (activeTurnStart !== null) throw new Error("Cannot reset while a request is active.");
+      messages.splice(1);
+    },
     async respond(userInput) {
       activeTurnStart = messages.length;
       messages.push({ role: "user", content: userInput });

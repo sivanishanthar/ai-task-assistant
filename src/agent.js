@@ -59,7 +59,7 @@ async function startAgent() {
   console.log("\n******************************************");
   console.log("       Welcome to AI Task Assistant!");
   console.log("******************************************");
-  console.log("Type 'help' for tools and limits, 'status' for setup checks, or 'exit' to quit.\n");
+  console.log("Type 'help' for tools and limits, 'status' for setup checks, 'reset' to clear history, or 'exit' to quit.\n");
   try {
     while (true) {
       const userInput = await rl.question("You: ");
@@ -75,6 +75,11 @@ async function startAgent() {
       }
       if (command === "status") {
         console.log(await status());
+        continue;
+      }
+      if (command === "reset") {
+        agent.reset();
+        console.log("\nAgent: Conversation history cleared. System instructions and workspace files are unchanged.\n");
         continue;
       }
       try {

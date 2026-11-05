@@ -551,6 +551,31 @@ requests such as `status of my files` still go to the model. A normal interactiv
 session retains its API-key requirement; use `--status` to diagnose missing-key
 setup offline. No API key or network access is needed for the status tests.
 
+### Local Reset Command
+
+Type `reset` in a running session to clear the agent's in-memory conversation
+history. The command is case-insensitive and trims surrounding whitespace.
+It preserves the original system instructions, workspace configuration, API
+client, and limits. The next model request starts with only those system
+instructions and the new user message, without old prompts, assistant messages,
+tool calls, results, or the reset confirmation.
+
+Reset is local: no API request, filesystem action, tool-execution log, or tool
+budget is used. Workspace files and folders are never deleted, overwritten, or
+renamed. Repeating the command on empty history is safe. Normal requests such as
+`reset my plan` still go to the model; only the exact command is handled locally.
+
+Programmatic callers can call `agent.reset()` between serial `respond` calls.
+Reset during an active request is rejected to avoid corrupting tool history; it
+is not cancellation or rollback. The CLI accepts the command between turns. There
+is no standalone `--reset` flag because history belongs to the running session.
+Clearing local model context does not erase earlier provider records, terminal
+scrollback, or log files.
+
+Offline tests verify preserved system instructions and file contents, valid fresh
+history, repeated reset, recovery after API failure, and zero API calls from the
+CLI command. The `help` output includes reset and its preservation guarantees.
+
 ### Test Isolation
 
 One improvement I made during development was separating the test environment from the application's actual workspace.
